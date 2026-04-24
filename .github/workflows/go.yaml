@@ -1,0 +1,60 @@
+name: CI/CD
+permissions:
+  contents: write
+  discussions: write
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./...
+
+      - name: Test with Race Detector
+        run: go test -race ./...
+
+      - name: Get Coverage
+        run: go test -v -cover -coverprofile=coverage.out ./...
+
+  version:
+    name: Git Tag
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Conventional Commit and Semver Release
+        uses: cocogitto/cocogitto-action@v3
+        id: release
+        with:
+          release: true
+
+      - name: Generate Github Release Changelog
+        if: steps.release.outputs.version != ''
+        run: cog changelog --at v${{ steps.release.outputs.version }} -t full_hash > GITHUB_CHANGELOG.md
+      
+      - name: Upload Github Release
+        if: steps.release.outputs.version != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: GITHUB_CHANGELOG.md
+          tag_name: v${{ steps.release.outputs.version }}
+          name: Release v${{ steps.release.outputs.version }}

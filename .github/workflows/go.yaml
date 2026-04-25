@@ -49,7 +49,7 @@ jobs:
 
       - name: Generate Github Release Changelog
         if: steps.release.outputs.version != ''
-        run: cog changelog --at ${{ steps.release.outputs.version }} -t full_hash > GITHUB_CHANGELOG.md
+        run: cog changelog --at v${{ steps.release.outputs.version }} -t full_hash > GITHUB_CHANGELOG.md
       
       - name: Upload Github Release
         if: steps.release.outputs.version != ''

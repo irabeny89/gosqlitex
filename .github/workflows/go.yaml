@@ -49,12 +49,12 @@ jobs:
 
       - name: Generate Github Release Changelog
         if: steps.release.outputs.version != ''
-        run: cog changelog --at v${{ steps.release.outputs.version }} -t full_hash > GITHUB_CHANGELOG.md
+        run: cog changelog --at ${{ steps.release.outputs.version }} -t full_hash > GITHUB_CHANGELOG.md
       
       - name: Upload Github Release
         if: steps.release.outputs.version != ''
         uses: softprops/action-gh-release@v2
         with:
           body_path: GITHUB_CHANGELOG.md
-          tag_name: v${{ steps.release.outputs.version }}
-          name: Release v${{ steps.release.outputs.version }}
+          tag_name: ${{ steps.release.outputs.version }}
+          name: Release ${{ steps.release.outputs.version }}

@@ -67,18 +67,71 @@ func main() {
 }
 ```
 
-## API
+## Configuration
+
+### Simple Configuration
+
+The easiest way to get started is by providing a database path. `gosqlitex` will automatically apply optimized pragmas for WAL mode.
+
+```go
+// DbPath and Driver are optional - default values will be used if not provided
+client, err := gosqlitex.Open(&gosqlitex.Config{
+    DbPath: "app.db", // default if not provided
+    Driver: "sqlite", // default if not provided
+})
+```
+
+### Advanced Configuration (Manual DSN)
+
+For full control over the SQLite connection (e.g., in-memory databases, custom pragmas), you can provide manual Data Source Names (DSNs) for both reading and writing.
+
+```go
+cnf := &gosqlitex.Config{
+    RDsn:   "file:app.db?mode=ro&_pragma=journal_mode(WAL)",
+    WDsn:   "file:app.db?mode=rwc&_pragma=journal_mode(WAL)",
+}
+client, err := gosqlitex.Open(cnf)
+```
+
+Example of configuration for an in-memory database
+
+```go
+cnf := &gosqlitex.Config{
+    RDsn:   ":memory:",
+    WDsn:   ":memory:",
+}
+client, err := gosqlitex.Open(cnf)
+```
+
+> [!NOTE]
+> When using manual DSNs, `gosqlitex` will use the provided strings directly. Unless its `:memory:` (in-memory database) ensure your `WDsn` has `mode=rwc` (or equivalent) to allow file creation and write access.
+
+## Architecture
+
+`gosqlitex` is designed to handle the nuances of SQLite concurrency:
+
+1. **Read Pool**: Uses multiple connections (default: 8) to allow concurrent read operations.
+2. **Write Pool**: Uses a single connection to serialize writes, preventing "database is locked" errors while maintaining high throughput via WAL mode.
+
+## API Reference
 
 ### `Open(cnf *Config) (*DbClient, error)`
 
-Opens a new database connection with optimized settings.
+Initializes the database client.
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `DbPath` | `string` | Path to the SQLite database file (defaults to `app.db`). |
+| `Driver` | `string` | Database driver name (defaults to `sqlite`). |
+| `RDsn` | `string` | Manual DSN for the read pool. |
+| `WDsn` | `string` | Manual DSN for the write pool. |
 
 ### `DbClient` Methods
 
-- `Query(query string, args ...any) (*sql.Rows, error)`: Executes a query on the **read pool**.
-- `QueryRow(query string, args ...any) *sql.Row`: Executes a query on the **read pool**.
-- `Exec(query string, args ...any) (sql.Result, error)`: Executes a query on the **write pool**.
-- `Ping() error`: Verifies both read and write pools are alive.
+- **`Query(query string, args ...any) (*sql.Rows, error)`**: Executes a query on the read pool.
+- **`QueryRow(query string, args ...any) *sql.Row`**: Executes a single-row query on the read pool.
+- **`Exec(query string, args ...any) (sql.Result, error)`**: Executes a command on the write pool.
+- **`Ping() error`**: Verifies connectivity for both pools.
 
 ## License
 

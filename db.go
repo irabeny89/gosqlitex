@@ -28,6 +28,8 @@ type sqliteConfig struct {
 	mode string
 	// pragmas are the pragmas to use for the database connection. E.g []string{"journal_mode(WAL)", "busy_timeout(5000)", "foreign_keys(ON)"}
 	pragma []string
+	// dsn is a data source name in case you want to use :memory: or configure db url
+	dsn string
 }
 
 // MARK: - Interfaces
@@ -37,6 +39,19 @@ type sqliteConfig struct {
 // MARK: - Methods
 
 func (cnf *sqliteConfig) newPool(maxConn int) (*sql.DB, error) {
+	// escape hatch for manual config
+	if cnf.dsn != "" {
+		db, err := sql.Open(cnf.driver, cnf.dsn)
+		if err != nil {
+			return nil, err
+		}
+		db.SetMaxOpenConns(maxConn)
+		db.SetMaxIdleConns(maxConn)
+		// no max lifetime - db will be open until the application closes it
+		db.SetConnMaxLifetime(0)
+		return db, nil
+	}
+
 	const scheme = "file"
 	query := url.Values{
 		"mode":    []string{cnf.mode},
@@ -93,6 +108,10 @@ type Config struct {
 	DbPath string
 	// Driver is the name of the database driver to use (e.g., "sqlite").
 	Driver string
+	// rDsn is read data source name in case you want to use :memory: or configure db url
+	RDsn string
+	// wDsn is write data source name in case you want to use :memory: or configure db url
+	WDsn string
 }
 
 // Open opens a new database connection with optimized SQLite settings.
@@ -114,23 +133,9 @@ func Open(cnf *Config) (*DbClient, error) {
 			"mmap_size(268435456)", // 256MB for memory mapping - read faster and less disk I/O
 		}
 	)
-	if cnf.DbPath != "" {
-		dbPath = cnf.DbPath
-	}
+
 	if cnf.Driver != "" {
 		driver = cnf.Driver
-	}
-	readConfig := &sqliteConfig{
-		dbPath: dbPath,
-		driver: driver,
-		mode:   "ro",
-		pragma: pragma,
-	}
-	writeConfig := &sqliteConfig{
-		dbPath: dbPath,
-		driver: driver,
-		mode:   "rwc",
-		pragma: append(pragma, "synchronous(NORMAL)"),
 	}
 
 	//! NOTE: sqlite WAL mode requires -shm and -wal files.
@@ -138,7 +143,51 @@ func Open(cnf *Config) (*DbClient, error) {
 	//! This is because WAL mode requires the "writer" connection (rwc) to create the -shm and -wal files,
 	//! and the "reader" connection (ro) cannot create them.
 
-	w, err := writeConfig.newPool(wMaxConn)
+	// handle escape hatch for manual config
+	if cnf.RDsn != "" && cnf.WDsn != "" {
+		rConfig := &sqliteConfig{dsn: cnf.RDsn, driver: driver}
+		wConfig := &sqliteConfig{dsn: cnf.WDsn, driver: driver}
+
+		w, err := wConfig.newPool(wMaxConn)
+		if err != nil {
+			return nil, err
+		}
+		// Ping the writer to ensure the file is created and WAL mode is initialized.
+		if err := w.Ping(); err != nil {
+			return nil, err
+		}
+
+		r, err := rConfig.newPool(rMaxConn)
+		if err != nil {
+			return nil, err
+		}
+
+		client := &DbClient{
+			readPool:  r,
+			writePool: w,
+		}
+
+		return client, nil
+	}
+
+	if cnf.DbPath != "" {
+		dbPath = cnf.DbPath
+	}
+
+	rConfig := &sqliteConfig{
+		dbPath: dbPath,
+		driver: driver,
+		mode:   "ro",
+		pragma: pragma,
+	}
+	wConfig := &sqliteConfig{
+		dbPath: dbPath,
+		driver: driver,
+		mode:   "rwc",
+		pragma: append(pragma, "synchronous(NORMAL)"),
+	}
+
+	w, err := wConfig.newPool(wMaxConn)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +196,7 @@ func Open(cnf *Config) (*DbClient, error) {
 		return nil, err
 	}
 
-	r, err := readConfig.newPool(rMaxConn)
+	r, err := rConfig.newPool(rMaxConn)
 	if err != nil {
 		return nil, err
 	}

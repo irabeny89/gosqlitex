@@ -1,0 +1,13 @@
+tag_prefix = "v"
+
+[bump_profiles]
+
+[changelog]
+path = "CHANGELOG.md"
+template = "remote"
+remote = "github.com"
+repository = "gosqlitex"
+owner = "irabeny89"
+authors = [
+    { signature = "Irabeny", username = "irabeny89" }
+]

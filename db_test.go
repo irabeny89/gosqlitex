@@ -1,6 +1,7 @@
 package gosqlitex
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 )
@@ -137,3 +138,79 @@ func TestConcurrency(t *testing.T) {
 
 	<-done
 }
+
+func TestTransactionsAndContext(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_tx_ctx.db")
+	client, err := Open(&Config{DbPath: dbPath})
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer client.readPool.Close()
+	defer client.writePool.Close()
+
+	ctx := context.Background()
+
+	// Test ExecContext
+	_, err = client.ExecContext(ctx, "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
+	if err != nil {
+		t.Fatalf("ExecContext failed: %v", err)
+	}
+
+	// Test Transaction (Begin)
+	tx, err := client.Begin()
+	if err != nil {
+		t.Fatalf("Begin failed: %v", err)
+	}
+	_, err = tx.Exec("INSERT INTO users (name) VALUES (?)", "Bob")
+	if err != nil {
+		tx.Rollback()
+		t.Fatalf("transaction insert failed: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit failed: %v", err)
+	}
+
+	// Test QueryRowContext
+	var name string
+	err = client.QueryRowContext(ctx, "SELECT name FROM users WHERE name = ?", "Bob").Scan(&name)
+	if err != nil {
+		t.Fatalf("QueryRowContext failed: %v", err)
+	}
+	if name != "Bob" {
+		t.Errorf("expected Bob, got %s", name)
+	}
+
+	// Test Transaction with Context (BeginTx)
+	tx, err = client.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("BeginTx failed: %v", err)
+	}
+	_, err = tx.ExecContext(ctx, "INSERT INTO users (name) VALUES (?)", "Charlie")
+	if err != nil {
+		tx.Rollback()
+		t.Fatalf("transaction insert with context failed: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit (BeginTx) failed: %v", err)
+	}
+
+	// Test QueryContext
+	rows, err := client.QueryContext(ctx, "SELECT name FROM users ORDER BY name")
+	if err != nil {
+		t.Fatalf("QueryContext failed: %v", err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			t.Fatalf("rows.Scan failed: %v", err)
+		}
+		names = append(names, n)
+	}
+	if len(names) != 2 || names[0] != "Bob" || names[1] != "Charlie" {
+		t.Errorf("unexpected results: %v", names)
+	}
+}
+

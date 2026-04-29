@@ -129,8 +129,13 @@ Initializes the database client.
 ### `DbClient` Methods
 
 - **`Query(query string, args ...any) (*sql.Rows, error)`**: Executes a query on the read pool.
+- **`QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)`**: Executes a query on the read pool with context.
 - **`QueryRow(query string, args ...any) *sql.Row`**: Executes a single-row query on the read pool.
+- **`QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row`**: Executes a single-row query on the read pool with context.
 - **`Exec(query string, args ...any) (sql.Result, error)`**: Executes a command on the write pool.
+- **`ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)`**: Executes a command on the write pool with context.
+- **`Begin() (*sql.Tx, error)`**: Starts a transaction on the write pool.
+- **`BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)`**: Starts a transaction on the write pool with context.
 - **`Ping() error`**: Verifies connectivity for both pools.
 
 ## License

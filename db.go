@@ -1,6 +1,7 @@
 package gosqlitex
 
 import (
+	"context"
 	"database/sql"
 	"net/url"
 
@@ -88,14 +89,39 @@ func (c *DbClient) Query(query string, args ...any) (*sql.Rows, error) {
 	return c.readPool.Query(query, args...)
 }
 
+// QueryContext executes a query that returns rows, using the read pool. E.g SELECT * FROM users
+func (c *DbClient) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return c.readPool.QueryContext(ctx, query, args...)
+}
+
 // QueryRow executes a query that returns a single row, using the read pool. E.g SELECT * FROM users WHERE id = 1
 func (c *DbClient) QueryRow(query string, args ...any) *sql.Row {
 	return c.readPool.QueryRow(query, args...)
 }
 
+// QueryRowContext executes a query that returns a single row, using the read pool. E.g SELECT * FROM users WHERE id = 1
+func (c *DbClient) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return c.readPool.QueryRowContext(ctx, query, args...)
+}
+
 // Exec executes a query that returns a result, using the write pool. E.g INSERT, UPDATE, DELETE, CREATE, DROP, etc
 func (c *DbClient) Exec(query string, args ...any) (sql.Result, error) {
 	return c.writePool.Exec(query, args...)
+}
+
+// ExecContext executes a query that returns a result, using the write pool. E.g INSERT, UPDATE, DELETE, CREATE, DROP, etc
+func (c *DbClient) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return c.writePool.ExecContext(ctx, query, args...)
+}
+
+// Begin starts a transaction on the write pool.
+func (c *DbClient) Begin() (*sql.Tx, error) {
+	return c.writePool.Begin()
+}
+
+// BeginTx starts a transaction on the write pool.
+func (c *DbClient) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	return c.writePool.BeginTx(ctx, opts)
 }
 
 // MARK: - Private Func

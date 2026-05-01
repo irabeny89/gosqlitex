@@ -39,6 +39,7 @@ func main() {
  if err != nil {
   log.Fatal(err)
  }
+ defer client.Close()
 
  // Ping the database
  if err := client.Ping(); err != nil {
@@ -134,9 +135,12 @@ Initializes the database client.
 - **`QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row`**: Executes a single-row query on the read pool with context.
 - **`Exec(query string, args ...any) (sql.Result, error)`**: Executes a command on the write pool.
 - **`ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)`**: Executes a command on the write pool with context.
+- **`Prepare(query string) (*sql.Stmt, error)`**: Prepares a statement. Automatically routes `SELECT` queries to the read pool and all other queries to the write pool.
+- **`PrepareContext(ctx context.Context, query string) (*sql.Stmt, error)`**: Prepares a statement with context.
 - **`Begin() (*sql.Tx, error)`**: Starts a transaction on the write pool.
 - **`BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)`**: Starts a transaction on the write pool with context.
 - **`Ping() error`**: Verifies connectivity for both pools.
+- **`Close() error`**: Closes both the read and write connection pools.
 
 ## License
 

@@ -16,8 +16,7 @@ func TestOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
-	defer client.readPool.Close()
-	defer client.writePool.Close()
+	defer client.Close()
 
 	if err := client.Ping(); err != nil {
 		t.Errorf("failed to ping database: %v", err)
@@ -30,8 +29,7 @@ func TestExecAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
-	defer client.readPool.Close()
-	defer client.writePool.Close()
+	defer client.Close()
 
 	// Test Exec
 	_, err = client.Exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
@@ -89,8 +87,7 @@ func TestOpenWithDSN(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open database with DSN: %v", err)
 	}
-	defer client.readPool.Close()
-	defer client.writePool.Close()
+	defer client.Close()
 
 	if err := client.Ping(); err != nil {
 		t.Errorf("failed to ping database: %v", err)
@@ -103,8 +100,7 @@ func TestConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
-	defer client.readPool.Close()
-	defer client.writePool.Close()
+	defer client.Close()
 
 	_, err = client.Exec("CREATE TABLE counters (id INTEGER PRIMARY KEY, val INTEGER)")
 	if err != nil {
@@ -145,8 +141,7 @@ func TestTransactionsAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
-	defer client.readPool.Close()
-	defer client.writePool.Close()
+	defer client.Close()
 
 	ctx := context.Background()
 
@@ -211,6 +206,92 @@ func TestTransactionsAndContext(t *testing.T) {
 	}
 	if len(names) != 2 || names[0] != "Bob" || names[1] != "Charlie" {
 		t.Errorf("unexpected results: %v", names)
+	}
+}
+
+func TestPrepare(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_prepare.db")
+	client, err := Open(&Config{DbPath: dbPath})
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer client.Close()
+
+	_, err = client.Exec("CREATE TABLE items (id INTEGER PRIMARY KEY, val TEXT)")
+	if err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+
+	// Test Prepare (Write)
+	stmt, err := client.Prepare("INSERT INTO items (val) VALUES (?)")
+	if err != nil {
+		t.Fatalf("Prepare (Write) failed: %v", err)
+	}
+	_, err = stmt.Exec("item1")
+	if err != nil {
+		t.Fatalf("stmt.Exec failed: %v", err)
+	}
+	stmt.Close()
+
+	// Test Prepare (Read)
+	stmt, err = client.Prepare("SELECT val FROM items WHERE id = ?")
+	if err != nil {
+		t.Fatalf("Prepare (Read) failed: %v", err)
+	}
+	var val string
+	err = stmt.QueryRow(1).Scan(&val)
+	if err != nil {
+		t.Fatalf("stmt.QueryRow failed: %v", err)
+	}
+	if val != "item1" {
+		t.Errorf("expected item1, got %s", val)
+	}
+	stmt.Close()
+
+	// Test Prepare (Read with lowercase and whitespace)
+	stmt, err = client.Prepare("  select val from items where id = ?")
+	if err != nil {
+		t.Fatalf("Prepare (Read lowercase) failed: %v", err)
+	}
+	err = stmt.QueryRow(1).Scan(&val)
+	if err != nil {
+		t.Fatalf("stmt.QueryRow (lowercase) failed: %v", err)
+	}
+	if val != "item1" {
+		t.Errorf("expected item1, got %s", val)
+	}
+	stmt.Close()
+
+	// Test PrepareContext
+	ctx := context.Background()
+	stmt, err = client.PrepareContext(ctx, "SELECT val FROM items WHERE id = ?")
+	if err != nil {
+		t.Fatalf("PrepareContext failed: %v", err)
+	}
+	err = stmt.QueryRowContext(ctx, 1).Scan(&val)
+	if err != nil {
+		t.Fatalf("stmt.QueryRowContext failed: %v", err)
+	}
+	if val != "item1" {
+		t.Errorf("expected item1, got %s", val)
+	}
+	stmt.Close()
+}
+
+func TestClose(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_close.db")
+	client, err := Open(&Config{DbPath: dbPath})
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+
+	if err := client.Close(); err != nil {
+		t.Errorf("Close failed: %v", err)
+	}
+
+	// Ping should fail after close
+	if err := client.Ping(); err == nil {
+		t.Error("Ping succeeded after Close, expected error")
 	}
 }
 

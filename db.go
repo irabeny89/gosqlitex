@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"net/url"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -122,6 +123,40 @@ func (c *DbClient) Begin() (*sql.Tx, error) {
 // BeginTx starts a transaction on the write pool.
 func (c *DbClient) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 	return c.writePool.BeginTx(ctx, opts)
+}
+
+// Prepare prepares a query for execution. It uses the read pool for read queries and the write pool for write queries.
+// Prepare creates a prepared statement for later queries or executions. 
+// Multiple queries or executions may be run concurrently from the returned statement. 
+// The caller must call the statement's [*Stmt.Close] method when the statement is no longer needed.
+func (c *DbClient) Prepare(query string) (*sql.Stmt, error) {
+	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(query)), "SELECT") {
+		return c.readPool.Prepare(query)
+	}
+	return c.writePool.Prepare(query)
+}
+
+// PrepareContext prepares a query for execution. It uses the read pool for read queries and the write pool for write queries.
+// PrepareContext creates a prepared statement for later queries or executions. 
+// Multiple queries or executions may be run concurrently from the returned statement.
+// The provided context is used for the preparation of the statement, not for the execution of the statement.
+// The caller must call the statement's [*Stmt.Close] method when the statement is no longer needed.
+func (c *DbClient) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
+	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(query)), "SELECT") {
+		return c.readPool.PrepareContext(ctx, query)
+	}
+	return c.writePool.PrepareContext(ctx, query)
+}
+
+// Close closes the database connection.
+func (c *DbClient) Close() error {
+	if err := c.readPool.Close(); err != nil {
+		return err
+	}
+	if err := c.writePool.Close(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // MARK: - Private Func

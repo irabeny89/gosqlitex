@@ -2,9 +2,7 @@ package mig8
 
 import (
 	"context"
-	"errors"
 	"flag"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -17,10 +15,8 @@ import (
 // generateFile generates a migration file in the form <timestamp><sep><filename>.sql.
 func generateFile(dir, fileName, sep string) (string, error) {
 	// create migration directory if it does not exist
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		if err := os.Mkdir(dir, 0755); err != nil {
-			return "", err
-		}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
 	}
 
 	// prefix filename with timestamp

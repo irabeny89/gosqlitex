@@ -150,6 +150,8 @@ Initializes the database client.
 
 ### Installation
 
+Install the binary to your `$GOPATH/bin`:
+
 ```bash
 go install github.com/irabeny89/gosqlitex/cmd/mig8@latest
 ```

@@ -1,4 +1,4 @@
-package mig8
+package main
 
 import (
 	"os"

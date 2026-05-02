@@ -156,6 +156,30 @@ go install github.com/irabeny89/gosqlitex/cmd/mig8@latest
 
 ### Usage
 
+You can use the CLI tool in several ways:
+
+#### 1. Global Installation
+Install the binary to your `$GOPATH/bin`:
+```bash
+go install github.com/irabeny89/gosqlitex/cmd/mig8@latest
+```
+Then use it directly:
+```bash
+mig8 -db app.db -run
+```
+
+#### 2. Run without installing
+Use `go run` to execute the latest version directly:
+```bash
+go run github.com/irabeny89/gosqlitex/cmd/mig8@latest -db app.db -run
+```
+
+#### 3. Using `go tool` (Go 1.24+)
+If you are using Go 1.24 or later, you can run it as a tool:
+```bash
+go tool github.com/irabeny89/gosqlitex/cmd/mig8@latest -db app.db -run
+```
+
 The CLI supports flags and environment variables for configuration.
 
 #### Environment Variables

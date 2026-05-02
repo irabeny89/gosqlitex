@@ -2,6 +2,8 @@ module github.com/irabeny89/gosqlitex
 
 go 1.26.2
 
+tool github.com/irabeny89/gosqlitex/cmd/mig8
+
 require modernc.org/sqlite v1.49.1
 
 require (

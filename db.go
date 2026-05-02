@@ -267,7 +267,7 @@ func (c *DbClient) RunMigrationsContext(ctx context.Context, dir, sep string) er
 				diff := dmp.DiffMain(string(query), string(sqlBytes), false)
 				fmt.Printf("Migration mismatch for %s\n", f.Name())
 				fmt.Println(dmp.DiffPrettyText(diff))
-				return fmt.Errorf("migration content changed for %s", f.Name())
+				return fmt.Errorf("migration content changed for %s.\n Move the changes into a new migration file", f.Name())
 			}
 			continue
 		}
@@ -278,6 +278,33 @@ func (c *DbClient) RunMigrationsContext(ctx context.Context, dir, sep string) er
 		}
 	}
 	return nil
+}
+
+// ListMigrationsContext lists all migrations that have been applied to the database.
+//
+// c is the database client.
+//
+// ctx is the context.
+//
+// This function:
+// - Creates the migrations table if it doesn't exist
+//
+// - Returns a list of all applied migration files
+func (c *DbClient) ListMigrationsContext(ctx context.Context) ([]string, error) {
+	rows, err := c.readPool.QueryContext(ctx, `SELECT name FROM migrations`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var migrations []string
+	for rows.Next() {
+		var migration string
+		if err = rows.Scan(&migration); err != nil {
+			return nil, err
+		}
+		migrations = append(migrations, migration)
+	}
+	return migrations, nil
 }
 
 // Close closes the database connection.

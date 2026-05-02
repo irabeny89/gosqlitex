@@ -139,8 +139,48 @@ Initializes the database client.
 - **`PrepareContext(ctx context.Context, query string) (*sql.Stmt, error)`**: Prepares a statement with context.
 - **`Begin() (*sql.Tx, error)`**: Starts a transaction on the write pool.
 - **`BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)`**: Starts a transaction on the write pool with context.
+- **`RunMigrationsContext(ctx context.Context, dir, sep string) error`**: Applies all migrations in the given directory to the database.
+- **`ListMigrationsContext(ctx context.Context) ([]string, error)`**: Returns a list of all applied migration files.
 - **`Ping() error`**: Verifies connectivity for both pools.
 - **`Close() error`**: Closes both the read and write connection pools.
+
+## Migrations CLI
+
+`gosqlitex` includes a CLI tool called `mig8` for easy migration management.
+
+### Installation
+
+```bash
+go install github.com/irabeny89/gosqlitex/cmd/mig8@latest
+```
+
+### Usage
+
+The CLI supports flags and environment variables for configuration.
+
+#### Environment Variables
+- `DB_PATH`: Path to the SQLite database.
+- `MIG_DIR`: Path to the migrations directory.
+
+#### Common Commands
+
+**Generate a new migration file:**
+```bash
+mig8 -dir ./migrations -file add_profile_table
+```
+
+**Run pending migrations:**
+```bash
+mig8 -db app.db -dir ./migrations -run
+```
+
+**List applied migrations:**
+```bash
+mig8 -db app.db -list
+```
+
+### Migration Safety
+When a migration is applied, `mig8` stores its content in a internal table. If an applied migration file is modified locally, `mig8` will detect the mismatch and error out during the next run to prevent schema drift.
 
 ## License
 

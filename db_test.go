@@ -2,7 +2,9 @@ package gosqlitex
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -292,6 +294,119 @@ func TestClose(t *testing.T) {
 	// Ping should fail after close
 	if err := client.Ping(); err == nil {
 		t.Error("Ping succeeded after Close, expected error")
+	}
+}
+
+func TestMigrations(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_mig.db")
+	client, err := Open(&Config{DbPath: dbPath})
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer client.Close()
+
+	ctx := context.Background()
+	migDir := t.TempDir()
+	sep := "_"
+
+	// 1. Create a valid migration file
+	mig1 := "20230101000000" + sep + "init.sql"
+	sql1 := "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);"
+	err = os.WriteFile(filepath.Join(migDir, mig1), []byte(sql1), 0644)
+	if err != nil {
+		t.Fatalf("failed to write mig1: %v", err)
+	}
+
+	// 2. Run migrations
+	err = client.RunMigrationsContext(ctx, migDir, sep)
+	if err != nil {
+		t.Fatalf("RunMigrationsContext failed: %v", err)
+	}
+
+	// Verify table exists
+	_, err = client.Exec("INSERT INTO users (name) VALUES (?)", "Alice")
+	if err != nil {
+		t.Errorf("table users does not exist or insert failed: %v", err)
+	}
+
+	// 3. List migrations
+	migs, err := client.ListMigrationsContext(ctx)
+	if err != nil {
+		t.Fatalf("ListMigrationsContext failed: %v", err)
+	}
+	if len(migs) != 1 || migs[0] != mig1 {
+		t.Errorf("unexpected migrations list: %v", migs)
+	}
+
+	// 4. Run again (should skip)
+	err = client.RunMigrationsContext(ctx, migDir, sep)
+	if err != nil {
+		t.Fatalf("RunMigrationsContext (second run) failed: %v", err)
+	}
+
+	// 5. Add second migration
+	mig2 := "20230101000001" + sep + "add_posts.sql"
+	sql2 := "CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT);"
+	err = os.WriteFile(filepath.Join(migDir, mig2), []byte(sql2), 0644)
+	if err != nil {
+		t.Fatalf("failed to write mig2: %v", err)
+	}
+
+	err = client.RunMigrationsContext(ctx, migDir, sep)
+	if err != nil {
+		t.Fatalf("RunMigrationsContext (third run) failed: %v", err)
+	}
+
+	migs, err = client.ListMigrationsContext(ctx)
+	if err != nil {
+		t.Fatalf("ListMigrationsContext failed: %v", err)
+	}
+	if len(migs) != 2 {
+		t.Errorf("expected 2 migrations, got %d", len(migs))
+	}
+
+	// 6. Test content change error
+	err = os.WriteFile(filepath.Join(migDir, mig1), []byte("CHANGED"), 0644)
+	if err != nil {
+		t.Fatalf("failed to change mig1: %v", err)
+	}
+	err = client.RunMigrationsContext(ctx, migDir, sep)
+	if err == nil || !strings.Contains(err.Error(), "migration content changed") {
+		t.Errorf("expected content changed error, got %v", err)
+	}
+}
+
+func TestInvalidMigrations(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_invalid_mig.db")
+	client, err := Open(&Config{DbPath: dbPath})
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer client.Close()
+
+	ctx := context.Background()
+	migDir := t.TempDir()
+	sep := "_"
+
+	// Invalid prefix
+	err = os.WriteFile(filepath.Join(migDir, "abc_init.sql"), []byte("..."), 0644)
+	if err != nil {
+		t.Fatalf("failed to write invalid prefix file: %v", err)
+	}
+	err = client.RunMigrationsContext(ctx, migDir, sep)
+	if err == nil || !strings.Contains(err.Error(), "migration file name prefix is not a number") {
+		t.Errorf("expected invalid prefix error, got %v", err)
+	}
+
+	// Missing separator
+	migDir2 := t.TempDir()
+	err = os.WriteFile(filepath.Join(migDir2, "20230101000000init.sql"), []byte("..."), 0644)
+	if err != nil {
+		t.Fatalf("failed to write missing separator file: %v", err)
+	}
+	err = client.RunMigrationsContext(ctx, migDir2, sep)
+	if err == nil || !strings.Contains(err.Error(), "migration file name separator not found") {
+		t.Errorf("expected missing separator error, got %v", err)
 	}
 }
 

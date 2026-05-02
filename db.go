@@ -1,11 +1,19 @@
+// Package gosqlitex provides a high-performance SQLite wrapper for Go, optimized for concurrency and safety using SQLite's Write-Ahead Logging (WAL) mode.
 package gosqlitex
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/sergi/go-diff/diffmatchpatch"
 	_ "modernc.org/sqlite"
 )
 
@@ -32,6 +40,18 @@ type sqliteConfig struct {
 	pragma []string
 	// dsn is a data source name in case you want to use :memory: or configure db url
 	dsn string
+}
+
+// Config holds the configuration for opening a new database connection pool.
+type Config struct {
+	// DbPath is the path to the database file (e.g., "app.db").
+	DbPath string
+	// Driver is the name of the database driver to use (e.g., "sqlite").
+	Driver string
+	// rDsn is read data source name in case you want to use :memory: or configure db url
+	RDsn string
+	// wDsn is write data source name in case you want to use :memory: or configure db url
+	WDsn string
 }
 
 // MARK: - Interfaces
@@ -126,8 +146,8 @@ func (c *DbClient) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, e
 }
 
 // Prepare prepares a query for execution. It uses the read pool for read queries and the write pool for write queries.
-// Prepare creates a prepared statement for later queries or executions. 
-// Multiple queries or executions may be run concurrently from the returned statement. 
+// Prepare creates a prepared statement for later queries or executions.
+// Multiple queries or executions may be run concurrently from the returned statement.
 // The caller must call the statement's [*Stmt.Close] method when the statement is no longer needed.
 func (c *DbClient) Prepare(query string) (*sql.Stmt, error) {
 	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(query)), "SELECT") {
@@ -137,7 +157,7 @@ func (c *DbClient) Prepare(query string) (*sql.Stmt, error) {
 }
 
 // PrepareContext prepares a query for execution. It uses the read pool for read queries and the write pool for write queries.
-// PrepareContext creates a prepared statement for later queries or executions. 
+// PrepareContext creates a prepared statement for later queries or executions.
 // Multiple queries or executions may be run concurrently from the returned statement.
 // The provided context is used for the preparation of the statement, not for the execution of the statement.
 // The caller must call the statement's [*Stmt.Close] method when the statement is no longer needed.
@@ -146,6 +166,118 @@ func (c *DbClient) PrepareContext(ctx context.Context, query string) (*sql.Stmt,
 		return c.readPool.PrepareContext(ctx, query)
 	}
 	return c.writePool.PrepareContext(ctx, query)
+}
+
+func (c *DbClient) createMigTable(ctx context.Context) error {
+	_, err := c.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS migrations (
+			id INTEGER PRIMARY KEY,
+			name TEXT NOT NULL,
+			query BLOB NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TRIGGER IF NOT EXISTS update_mig_updated_at 
+		AFTER UPDATE ON migrations
+		BEGIN
+			UPDATE migrations SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+		END;
+	`)
+	return err
+}
+
+func (c *DbClient) updateDB(ctx context.Context, fn string, q []byte) error {
+	tx, err := c.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, string(q))
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+			INSERT INTO migrations (name, query) VALUES (?, ?)
+		`, fn, q)
+	if err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// RunMigrationsContext applies all migrations in the given directory into the database.
+//
+// c is the database client.
+//
+// ctx is the context.
+//
+// dir is the path to the migration files.
+//
+// sep is the separator used in the migration file name. E.g "1_sep_2_sep_3.sql"
+//
+// This function:
+// - Creates the migrations table if it doesn't exist
+//
+// - Reads all files in the specified directory
+//
+// - Validates that each file is a valid migration file
+//
+// - Checks if the migration has already been applied
+//
+// - Applies the migration if it hasn't been applied
+//
+// - Records the migration in the migrations table
+//
+// - Rolls back the transaction if any error occurs
+func (c *DbClient) RunMigrationsContext(ctx context.Context, dir, sep string) error {
+	if err := c.createMigTable(ctx); err != nil {
+		return err
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		if err = validateFile(f, sep); err != nil {
+			return err
+		}
+		var query []byte
+		err = c.QueryRowContext(
+			ctx,
+			`SELECT query FROM migrations WHERE name = ?`,
+			f.Name(),
+		).Scan(&query)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+
+		sqlBytes, errFile := os.ReadFile(filepath.Join(dir, f.Name()))
+		if errFile != nil {
+			return errFile
+		}
+
+		if err == nil {
+			// Migration already applied
+			dmp := diffmatchpatch.New()
+			if !bytes.Equal(query, sqlBytes) {
+				diff := dmp.DiffMain(string(query), string(sqlBytes), false)
+				fmt.Printf("Migration mismatch for %s\n", f.Name())
+				fmt.Println(dmp.DiffPrettyText(diff))
+				return fmt.Errorf("migration content changed for %s", f.Name())
+			}
+			continue
+		}
+
+		// apply migration
+		if err = c.updateDB(ctx, f.Name(), sqlBytes); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Close closes the database connection.
@@ -159,20 +291,20 @@ func (c *DbClient) Close() error {
 	return nil
 }
 
-// MARK: - Private Func
-
-// MARK: - Public Func
-
-// Config holds the configuration for opening a new database connection pool.
-type Config struct {
-	// DbPath is the path to the database file (e.g., "app.db").
-	DbPath string
-	// Driver is the name of the database driver to use (e.g., "sqlite").
-	Driver string
-	// rDsn is read data source name in case you want to use :memory: or configure db url
-	RDsn string
-	// wDsn is write data source name in case you want to use :memory: or configure db url
-	WDsn string
+func validateFile(f os.DirEntry, sep string) error {
+	if f.IsDir() {
+		return errors.New("only files are allowed in migrations folder")
+	}
+	// split the filename on the first separator to get the timestamp.
+	v, _, ok := strings.Cut(f.Name(), sep)
+	if !ok {
+		return errors.New("migration file name separator not found")
+	}
+	// check if the timestamp is a valid integer
+	if _, err := strconv.Atoi(v); err != nil {
+		return errors.New("migration file name prefix is not a number")
+	}
+	return nil
 }
 
 // Open opens a new database connection with optimized SQLite settings.

@@ -15,13 +15,13 @@ import (
 // generateFile generates a migration file in the form <timestamp><sep><filename>.sql.
 func generateFile(dir, fileName, sep string) (string, error) {
 	// create migration directory if it does not exist
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
 
 	// prefix filename with timestamp
 	fileName = time.Now().Format("20060102150405") + sep + fileName + ".sql"
-	file, err := os.Create(filepath.Join(dir, fileName)) 
+	file, err := os.Create(filepath.Join(dir, fileName))
 	if err != nil {
 		return "", err
 	}
@@ -42,7 +42,6 @@ func main() {
 		log.Warn("DB_PATH not found in environment")
 	}
 
-	
 	dirFlag := flag.String("dir", dir, "Path to the migration directory.")
 	dbFlag := flag.String("db", db, "Path to the database file.")
 	fileFlag := flag.String("file", "", "Name of the migration file. This generates the sql file for you.")
@@ -72,7 +71,7 @@ func main() {
 
 	// generate migration file
 	if *fileFlag != "" && !*runFlag && !*listFlag {
-		filePath, err := generateFile(*dirFlag, *fileFlag, *sepFlag); 
+		filePath, err := generateFile(*dirFlag, *fileFlag, *sepFlag)
 		if err != nil {
 			log.Error("Failed to generate migration file", "error", err.Error())
 			os.Exit(1)
@@ -105,7 +104,7 @@ func main() {
 			log.Error("Failed to list migrations", "error", err.Error())
 			os.Exit(1)
 		} else {
-			log.Info("Migrations listed successfully:\n"+strings.Join(migrations, "\n"))
+			log.Info("Migrations listed successfully:\n" + strings.Join(migrations, "\n"))
 			os.Exit(0)
 		}
 	}

@@ -24,9 +24,9 @@ import (
 // to ensure write safety and optimal performance with SQLite WAL mode.
 type DbClient struct {
 	// Read pool (multi connections). E.g. SELECT.
-	readPool *sql.DB
+	ReadPool *sql.DB
 	// Write pool (single connection). E.g. INSERT, UPDATE, DELETE.
-	writePool *sql.DB
+	WritePool *sql.DB
 }
 
 type sqliteConfig struct {
@@ -94,11 +94,11 @@ func (cnf *sqliteConfig) newPool(maxConn int) (*sql.DB, error) {
 
 // Ping checks if the database connection is alive.
 func (c *DbClient) Ping() error {
-	err := c.readPool.Ping()
+	err := c.ReadPool.Ping()
 	if err != nil {
 		return err
 	}
-	err = c.writePool.Ping()
+	err = c.WritePool.Ping()
 	if err != nil {
 		return err
 	}
@@ -107,42 +107,42 @@ func (c *DbClient) Ping() error {
 
 // Query executes a query that returns rows, using the read pool. E.g SELECT * FROM users
 func (c *DbClient) Query(query string, args ...any) (*sql.Rows, error) {
-	return c.readPool.Query(query, args...)
+	return c.ReadPool.Query(query, args...)
 }
 
 // QueryContext executes a query that returns rows, using the read pool. E.g SELECT * FROM users
 func (c *DbClient) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return c.readPool.QueryContext(ctx, query, args...)
+	return c.ReadPool.QueryContext(ctx, query, args...)
 }
 
 // QueryRow executes a query that returns a single row, using the read pool. E.g SELECT * FROM users WHERE id = 1
 func (c *DbClient) QueryRow(query string, args ...any) *sql.Row {
-	return c.readPool.QueryRow(query, args...)
+	return c.ReadPool.QueryRow(query, args...)
 }
 
 // QueryRowContext executes a query that returns a single row, using the read pool. E.g SELECT * FROM users WHERE id = 1
 func (c *DbClient) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	return c.readPool.QueryRowContext(ctx, query, args...)
+	return c.ReadPool.QueryRowContext(ctx, query, args...)
 }
 
 // Exec executes a query that returns a result, using the write pool. E.g INSERT, UPDATE, DELETE, CREATE, DROP, etc
 func (c *DbClient) Exec(query string, args ...any) (sql.Result, error) {
-	return c.writePool.Exec(query, args...)
+	return c.WritePool.Exec(query, args...)
 }
 
 // ExecContext executes a query that returns a result, using the write pool. E.g INSERT, UPDATE, DELETE, CREATE, DROP, etc
 func (c *DbClient) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	return c.writePool.ExecContext(ctx, query, args...)
+	return c.WritePool.ExecContext(ctx, query, args...)
 }
 
 // Begin starts a transaction on the write pool.
 func (c *DbClient) Begin() (*sql.Tx, error) {
-	return c.writePool.Begin()
+	return c.WritePool.Begin()
 }
 
 // BeginTx starts a transaction on the write pool.
 func (c *DbClient) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
-	return c.writePool.BeginTx(ctx, opts)
+	return c.WritePool.BeginTx(ctx, opts)
 }
 
 // Prepare prepares a query for execution. It uses the read pool for read queries and the write pool for write queries.
@@ -151,9 +151,9 @@ func (c *DbClient) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, e
 // The caller must call the statement's [*Stmt.Close] method when the statement is no longer needed.
 func (c *DbClient) Prepare(query string) (*sql.Stmt, error) {
 	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(query)), "SELECT") {
-		return c.readPool.Prepare(query)
+		return c.ReadPool.Prepare(query)
 	}
-	return c.writePool.Prepare(query)
+	return c.WritePool.Prepare(query)
 }
 
 // PrepareContext prepares a query for execution. It uses the read pool for read queries and the write pool for write queries.
@@ -163,9 +163,9 @@ func (c *DbClient) Prepare(query string) (*sql.Stmt, error) {
 // The caller must call the statement's [*Stmt.Close] method when the statement is no longer needed.
 func (c *DbClient) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
 	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(query)), "SELECT") {
-		return c.readPool.PrepareContext(ctx, query)
+		return c.ReadPool.PrepareContext(ctx, query)
 	}
-	return c.writePool.PrepareContext(ctx, query)
+	return c.WritePool.PrepareContext(ctx, query)
 }
 
 func (c *DbClient) createMigTable(ctx context.Context) error {
@@ -293,7 +293,7 @@ func (c *DbClient) RunMigrationsContext(ctx context.Context, dir, sep string) er
 //
 // - Returns a list of all applied migration files
 func (c *DbClient) ListMigrationsContext(ctx context.Context) ([]string, error) {
-	rows, err := c.readPool.QueryContext(ctx, `SELECT name FROM migrations`)
+	rows, err := c.ReadPool.QueryContext(ctx, `SELECT name FROM migrations`)
 	if err != nil {
 		return nil, err
 	}
@@ -315,10 +315,10 @@ func (c *DbClient) ListMigrationsContext(ctx context.Context) ([]string, error) 
 
 // Close closes the database connection.
 func (c *DbClient) Close() error {
-	if err := c.readPool.Close(); err != nil {
+	if err := c.ReadPool.Close(); err != nil {
 		return err
 	}
-	if err := c.writePool.Close(); err != nil {
+	if err := c.WritePool.Close(); err != nil {
 		return err
 	}
 	return nil
@@ -389,8 +389,8 @@ func Open(cnf *Config) (*DbClient, error) {
 		}
 
 		client := &DbClient{
-			readPool:  r,
-			writePool: w,
+			ReadPool:  r,
+			WritePool: w,
 		}
 
 		return client, nil
@@ -428,8 +428,8 @@ func Open(cnf *Config) (*DbClient, error) {
 	}
 
 	client := &DbClient{
-		readPool:  r,
-		writePool: w,
+		ReadPool:  r,
+		WritePool: w,
 	}
 
 	return client, nil

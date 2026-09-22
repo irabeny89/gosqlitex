@@ -178,7 +178,7 @@ func (c *DbClient) createMigTable(ctx context.Context) error {
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 
-		CREATE TRIGGER IF NOT EXISTS update_mig_updated_at 
+		CREATE TRIGGER IF NOT EXISTS update_mig_updated_at
 		AFTER UPDATE ON migrations
 		BEGIN
 			UPDATE migrations SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
@@ -192,15 +192,17 @@ func (c *DbClient) updateDB(ctx context.Context, fn string, q []byte) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, string(q))
-	if err != nil {
+	defer func() {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			fmt.Printf("Rollback error: %v\n", err)
+		}
+	}()
+	if _, err = tx.ExecContext(ctx, string(q)); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `
+	if _, err = tx.ExecContext(ctx, `
 			INSERT INTO migrations (name, query) VALUES (?, ?)
-		`, fn, q)
-	if err != nil {
+		`, fn, q); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
@@ -295,7 +297,11 @@ func (c *DbClient) ListMigrationsContext(ctx context.Context) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			fmt.Printf("Row Close error: %v\n", err)
+		}
+	}()
 	var migrations []string
 	for rows.Next() {
 		var migration string

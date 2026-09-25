@@ -9,10 +9,12 @@ It manages separate connection pools for reading and writing:
 
 ## Features
 
-- **Optimized for WAL Mode**: Automatically initializes the database in WAL mode.
-- **Separate Read/Write Pools**: Maximizes performance by allowing concurrent reads while managing a single writer.
-- **Performance Pragmas**: Includes pre-configured SQLite pragmas for optimal speed (MMAP, Cache Size, Busy Timeout, etc.).
 - **Pure Go Driver**: Uses `modernc.org/sqlite`, which doesn't require CGO.
+- **Optimized for WAL Mode**: Automatically initializes the database in WAL mode.
+- **Performance Pragmas**: Includes pre-configured SQLite pragmas for optimal speed (MMAP, Cache Size, Busy Timeout, etc.).
+- **Isolated Connection Pools**: A dedicated single-connection writer pool to completely bypass write-lock corruption, combined with a multi-connection reader pool scaling flawlessly across CPU cores.
+- **Safe Multi-Environment Path Architecture**: Dynamic DSN string parsers that handle physical paths safely on macOS/Unix (with file:///), relative footprints, and isolated, non-leaking shared in-memory contexts (file:memdb_xxx?cache=shared) for robust unit testing.
+- **High-Throughput Tuning**: Operational structures running on modern sync.WaitGroup mechanics, paired with fine-tuned, active memory-mapping (mmap) and page cache configurations.
 
 ## Installation
 
@@ -33,8 +35,9 @@ import (
 
 func main() {
  // Initialize the client
- client, err := gosqlitex.Open(&gosqlitex.Config{
-  DbPath: "app.db",
+ client, err := gosqlitex.NewDBClient(&gosqlitex.DBConfig{
+    Dsn: "app.db",
+    // Pragma: []string{} <-- optional custom pragmas if you don't want the default ones
  })
  if err != nil {
   log.Fatal(err)
@@ -76,9 +79,8 @@ The easiest way to get started is by providing a database path. `gosqlitex` will
 
 ```go
 // DbPath and Driver are optional - default values will be used if not provided
-client, err := gosqlitex.Open(&gosqlitex.Config{
-    DbPath: "app.db", // default if not provided
-    Driver: "sqlite", // default if not provided
+client, err := gosqlitex.NewDBClient(&gosqlitex.DBConfig{
+    Dsn: "app.db", // default if not provided
 })
 ```
 
@@ -87,25 +89,34 @@ client, err := gosqlitex.Open(&gosqlitex.Config{
 For full control over the SQLite connection (e.g., in-memory databases, custom pragmas), you can provide manual Data Source Names (DSNs) for both reading and writing.
 
 ```go
-cnf := &gosqlitex.Config{
-    RDsn:   "file:app.db?mode=ro&_pragma=journal_mode(WAL)",
-    WDsn:   "file:app.db?mode=rwc&_pragma=journal_mode(WAL)",
+cnf := &gosqlitex.DBConfig{
+  Dsn: app.db,
+  Pragma: []string{
+    "journal_mode=WAL",
+    "synchronous=NORMAL",
+    "cache_size=10000",
+    "mmap_size=30000000000",
+    "busy_timeout=5000",
+  },
 }
-client, err := gosqlitex.Open(cnf)
+client, err := gosqlitex.NewDBClient(cnf)
 ```
 
 Example of configuration for an in-memory database
 
 ```go
-cnf := &gosqlitex.Config{
-    RDsn:   ":memory:",
-    WDsn:   ":memory:",
+cnf := &gosqlitex.DBConfig{
+  Dsn: ":memory:",
+  // Pragma: []string{
+  //   "journal_mode=WAL",
+  //   "synchronous=NORMAL",
+  //   "cache_size=10000",
+  //   "mmap_size=30000000000",
+  //   "busy_timeout=5000",
+  // }, <-- optional, default pragmas will be applied
 }
-client, err := gosqlitex.Open(cnf)
+client, err := gosqlitex.NewDBClient(cnf)
 ```
-
-> [!NOTE]
-> When using manual DSNs, `gosqlitex` will use the provided strings directly. Unless its `:memory:` (in-memory database) ensure your `WDsn` has `mode=rwc` (or equivalent) to allow file creation and write access.
 
 ## Architecture
 
@@ -120,12 +131,10 @@ client, err := gosqlitex.Open(cnf)
 
 Initializes the database client.
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `DbPath` | `string` | Path to the SQLite database file (defaults to `app.db`). |
-| `Driver` | `string` | Database driver name (defaults to `sqlite`). |
-| `RDsn` | `string` | Manual DSN for the read pool. |
-| `WDsn` | `string` | Manual DSN for the write pool. |
+| Field    | Type       | Description                                                        |
+| :------- | :--------- | :----------------------------------------------------------------- |
+| `Dsn`    | `string`   | Path to the SQLite database file or memory e.g app.db or :memory:. |
+| `Pragma` | `[]string` | List of pragma to apply. It already comes with optimized defaults. |
 
 ### `DbClient` Methods
 
@@ -143,6 +152,34 @@ Initializes the database client.
 - **`ListMigrationsContext(ctx context.Context) ([]string, error)`**: Returns a list of all applied migration files.
 - **`Ping() error`**: Verifies connectivity for both pools.
 - **`Close() error`**: Closes both the read and write connection pools.
+
+### Testing And Benchmarking
+
+Use `go test` to run the test suite. Use `go test -bench=.` to run benchmarks.
+
+- `BenchmarkParallelReads` measures how fast `ReadPool` scales across CPU cores.
+
+```sh
+goos: darwin
+goarch: amd64
+pkg: github.com/irabeny89/gosqlitex
+cpu: Intel(R) Core(TM) i5-1038NG7 CPU @ 2.00GHz
+BenchmarkParallelReads-8   	  432874	      2738 ns/op	     460 B/op	      16 allocs/op
+PASS
+ok  	github.com/irabeny89/gosqlitex	3.713s
+```
+
+- `BenchmarkParallelWrites` measures how `Write-Ahead Logging` handles concurrent writes.
+
+```sh
+goos: darwin
+goarch: amd64
+pkg: github.com/irabeny89/gosqlitex
+cpu: Intel(R) Core(TM) i5-1038NG7 CPU @ 2.00GHz
+BenchmarkParallelWrites-8   	   29565	     38224 ns/op	     312 B/op	      11 allocs/op
+PASS
+ok  	github.com/irabeny89/gosqlitex	2.723s
+```
 
 ## Migrations CLI
 

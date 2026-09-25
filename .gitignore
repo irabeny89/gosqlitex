@@ -28,3 +28,9 @@ coverage.out
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# in memory database from test
+memdb
+# generated test run files
+Test*
+Bench*

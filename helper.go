@@ -3,24 +3,24 @@ package gosqlitex
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-func validateFile(f os.DirEntry, sep string) error {
-	if f.IsDir() {
-		return ErrDirNotAllowedMig
-	}
+func validateFilename(name, sep string) error {
 	// split the filename on the first separator to get the timestamp.
-	v, _, ok := strings.Cut(f.Name(), sep)
+	v, _, ok := strings.Cut(name, sep)
 	if !ok {
 		return ErrSeparatorNotFoundMig
 	}
 	// check if the timestamp is a valid integer
 	if _, err := strconv.Atoi(v); err != nil {
 		return ErrPrefixNotNumberMig
+	}
+	// ensure .sql extension
+	if !strings.HasSuffix(name, ".sql") {
+		return ErrInvalidFileExtensionMig
 	}
 	return nil
 }

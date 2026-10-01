@@ -1,5 +1,32 @@
 # gosqlitex
 
+<!--toc:start-->
+
+- [gosqlitex](#gosqlitex)
+  - [Features](#features)
+  - [Installation](#installation)
+  - [Usage](#usage)
+  - [Configuration](#configuration)
+    - [Simple Configuration](#simple-configuration)
+    - [Advanced Configuration (Manual DSN)](#advanced-configuration-manual-dsn)
+  - [Architecture](#architecture)
+  - [API Reference](#api-reference)
+    - [`Open(cnf *Config) (*DbClient, error)`](#opencnf-config-dbclient-error)
+    - [`DbClient` Methods](#dbclient-methods)
+    - [Testing And Benchmarking](#testing-and-benchmarking)
+  - [Migrations CLI](#migrations-cli)
+    - [Installation](#installation-1)
+    - [Usage](#usage-1)
+      - [1. Global Installation](#1-global-installation)
+      - [2. Run without installing](#2-run-without-installing)
+      - [3. Using `go tool` (Go 1.24+)](#3-using-go-tool-go-124)
+      - [Environment Variables](#environment-variables)
+      - [Common Commands](#common-commands)
+    - [Migration Safety](#migration-safety)
+  - [License](#license)
+
+<!--toc:end-->
+
 `gosqlitex` is a high-performance SQLite wrapper for Go, optimized for concurrency and safety using SQLite's **Write-Ahead Logging (WAL)** mode.
 
 It manages separate connection pools for reading and writing:
@@ -54,7 +81,6 @@ func main() {
  if err != nil {
   log.Fatal(err)
  }
-
  _, err = client.Exec("INSERT INTO users (name) VALUES (?)", "Alice")
  if err != nil {
   log.Fatal(err)
@@ -75,7 +101,7 @@ func main() {
 
 ### Simple Configuration
 
-The easiest way to get started is by providing a database path. `gosqlitex` will automatically apply optimized pragmas for WAL mode.
+The easiest way to get started is by providing a database path. `gosqlitex` will automatically apply optimized configurations.
 
 ```go
 // DbPath and Driver are optional - default values will be used if not provided
@@ -92,8 +118,6 @@ For full control over the SQLite connection (e.g., in-memory databases, custom p
 cnf := &gosqlitex.DBConfig{
   Dsn: app.db,
   Pragma: []string{
-    "journal_mode=WAL",
-    "synchronous=NORMAL",
     "cache_size=10000",
     "mmap_size=30000000000",
     "busy_timeout=5000",
@@ -118,6 +142,12 @@ cnf := &gosqlitex.DBConfig{
 client, err := gosqlitex.NewDBClient(cnf)
 ```
 
+If you don't want the read and write pools, you can use the `DBPool` function directly and use like regular.
+
+```go
+pool, err := gosqlitex.DBPool("app.db", 8)
+```
+
 ## Architecture
 
 `gosqlitex` is designed to handle the nuances of SQLite concurrency:
@@ -127,7 +157,7 @@ client, err := gosqlitex.NewDBClient(cnf)
 
 ## API Reference
 
-### `Open(cnf *Config) (*DbClient, error)`
+### `NewDBClient(cnf *Config) (*DbClient, error)`
 
 Initializes the database client.
 
@@ -148,7 +178,10 @@ Initializes the database client.
 - **`PrepareContext(ctx context.Context, query string) (*sql.Stmt, error)`**: Prepares a statement with context.
 - **`Begin() (*sql.Tx, error)`**: Starts a transaction on the write pool.
 - **`BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)`**: Starts a transaction on the write pool with context.
+- **`RunOneMigration(filename, dir, sep string) error`**: Applies a single migration file to the database.
+- **`RunMigrations(dir, sep string) error`**: Applies all migrations in the given directory to the database.
 - **`RunMigrationsContext(ctx context.Context, dir, sep string) error`**: Applies all migrations in the given directory to the database.
+- **`ListMigrations() ([]string, error)`**: Returns a list of all applied migration files.
 - **`ListMigrationsContext(ctx context.Context) ([]string, error)`**: Returns a list of all applied migration files.
 - **`Ping() error`**: Verifies connectivity for both pools.
 - **`Close() error`**: Closes both the read and write connection pools.
@@ -216,7 +249,7 @@ mig8 -db app.db -run
 Use `go run` to execute the latest version directly:
 
 ```bash
-go run github.com/irabeny89/gosqlitex/cmd/mig8@latest -db app.db -run
+go run github.com/irabeny89/gosqlitex/cmd/mig8@latest -db app.db -dir ./migrations
 ```
 
 #### 3. Using `go tool` (Go 1.24+)
@@ -224,7 +257,7 @@ go run github.com/irabeny89/gosqlitex/cmd/mig8@latest -db app.db -run
 If you are using Go 1.24 or later, you can run it as a tool:
 
 ```bash
-go tool github.com/irabeny89/gosqlitex/cmd/mig8@latest -db app.db -run
+go tool github.com/irabeny89/gosqlitex/cmd/mig8@latest -db app.db -dir ./migrations
 ```
 
 The CLI supports flags and environment variables for configuration.
@@ -236,22 +269,28 @@ The CLI supports flags and environment variables for configuration.
 
 #### Common Commands
 
+**Help:**
+
+```bash
+mig8 --help
+```
+
 **Generate a new migration file:**
 
 ```bash
-mig8 -dir ./migrations -file add_profile_table
+mig8 --dir ./migrations --title "add profile table"
 ```
 
 **Run pending migrations:**
 
 ```bash
-mig8 -db app.db -dir ./migrations -run
+mig8 -db app.db -dir ./migrations
 ```
 
-**List applied migrations:**
+**Run a specific migration:**
 
 ```bash
-mig8 -db app.db -list
+mig8 -db app.db -dir ./migrations --file <migration_name>
 ```
 
 ### Migration Safety

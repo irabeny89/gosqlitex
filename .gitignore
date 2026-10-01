@@ -34,3 +34,5 @@ memdb
 # generated test run files
 Test*
 Bench*
+# cspell spellchecker
+cspell*

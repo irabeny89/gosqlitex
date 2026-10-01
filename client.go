@@ -110,7 +110,27 @@ func (c *DBClient) PrepareContext(ctx context.Context, query string) (*sql.Stmt,
 }
 
 // createMigTable creates the migrations table if it does not exist.
-func (c *DBClient) createMigTable(ctx context.Context) error {
+func (c *DBClient) createMigTable() error {
+	_, err := c.Exec(`
+		CREATE TABLE IF NOT EXISTS migrations (
+			id INTEGER PRIMARY KEY,
+			name TEXT NOT NULL,
+			query BLOB NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TRIGGER IF NOT EXISTS update_mig_updated_at
+		AFTER UPDATE ON migrations
+		BEGIN
+			UPDATE migrations SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+		END;
+	`)
+	return err
+}
+
+// createMigTable creates the migrations table if it does not exist.
+func (c *DBClient) createMigTableContext(ctx context.Context) error {
 	_, err := c.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS migrations (
 			id INTEGER PRIMARY KEY,
@@ -130,7 +150,32 @@ func (c *DBClient) createMigTable(ctx context.Context) error {
 }
 
 // updateMigDB updates the migrations table with the given migration name and query.
-func (c *DBClient) updateMigDB(ctx context.Context, fn string, q []byte) error {
+func (c *DBClient) updateMigDB(fn string, q []byte) error {
+	tx, err := c.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			fmt.Printf("Rollback error: %v\n", err)
+		}
+	}()
+	if _, err = tx.Exec(string(q)); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`
+			INSERT INTO migrations (name, query) VALUES (?, ?)
+		`, fn, q); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// updateMigDB updates the migrations table with the given migration name and query.
+func (c *DBClient) updateMigDBContext(ctx context.Context, fn string, q []byte) error {
 	tx, err := c.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -154,6 +199,93 @@ func (c *DBClient) updateMigDB(ctx context.Context, fn string, q []byte) error {
 	return nil
 }
 
+func (c *DBClient) processMigFile(filename, dir string, sep string) error {
+	if err := validateFilename(filename, sep); err != nil {
+		return err
+	}
+	// sqlBytes holds the file content expected to be sql
+	sqlBytes, err := os.ReadFile(filepath.Join(dir, filename))
+	if err != nil {
+		return err
+	}
+	// query holds the ran query that has been ran and stored in the db
+	var query []byte
+	errQ := c.QueryRow("SELECT query FROM migrations WHERE name = ?",
+		filename,
+	).Scan(&query)
+	if errQ != nil {
+		// if the query file content has not been ran yet
+		if errors.Is(errQ, sql.ErrNoRows) {
+			// write file sql to db
+			if err = c.updateMigDB(filename, sqlBytes); err != nil {
+				return err
+			}
+			// move to next file
+			return nil
+		}
+		return errQ // query error
+	}
+	queryStr := strings.TrimSpace(string(query))       // from db
+	sqlBytesStr := strings.TrimSpace(string(sqlBytes)) // from file
+	// if the query in db is not equal to the file content
+	if !strings.EqualFold(queryStr, sqlBytesStr) {
+		// Show diff between `query` in db and file content
+		dmp := diffmatchpatch.New()
+		diffs := dmp.DiffMain(queryStr, sqlBytesStr, false)
+		fmt.Printf("Migration mismatch for %s\n", filename)
+		fmt.Printf("diff: %s\n", dmp.DiffPrettyText(diffs))
+		return fmt.Errorf("%w: %s", ErrMigContentChanged, filename)
+	}
+	// migration content has not changed, move to next file
+	return nil
+}
+
+// RunOneMigration applies a single migration file into the database.
+//
+// c is the database client.
+//
+// filename is the name of the migration file to apply.
+//
+// dir is the path to the migration files.
+//
+// sep is the separator used in the migration file name. E.g "1_sep_2_sep_3.sql"
+func (c *DBClient) RunOneMigration(filename, dir, sep string) error {
+	if err := c.createMigTable(); err != nil {
+		return err
+	}
+	if err := c.processMigFile(filename, dir, sep); err != nil {
+		return err
+	}
+	return nil
+}
+
+// RunMigrations applies all migrations in the given directory into the database.
+//
+// c is the database client.
+//
+// dir is the path to the migration files.
+//
+// sep is the separator used in the migration file name. E.g "1_sep_2_sep_3.sql"
+func (c *DBClient) RunMigrations(dir, sep string) error {
+	if err := c.createMigTable(); err != nil {
+		return err
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	// Iterate over each file in the directory
+	// and ensure it is a valid migration file
+	// and compare its content with the one in the database
+	// and apply the migration if it hasn't been applied
+	for _, f := range files {
+		if err := c.processMigFile(f.Name(), dir, sep); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // RunMigrationsContext applies all migrations in the given directory into the database.
 //
 // c is the database client.
@@ -163,23 +295,8 @@ func (c *DBClient) updateMigDB(ctx context.Context, fn string, q []byte) error {
 // dir is the path to the migration files.
 //
 // sep is the separator used in the migration file name. E.g "1_sep_2_sep_3.sql"
-//
-// This function:
-// - Creates the migrations table if it doesn't exist
-//
-// - Reads all files in the specified directory
-//
-// - Validates that each file is a valid migration file
-//
-// - Checks if the migration has already been applied
-//
-// - Applies the migration if it hasn't been applied
-//
-// - Records the migration in the migrations table
-//
-// - Rolls back the transaction if any error occurs
 func (c *DBClient) RunMigrationsContext(ctx context.Context, dir, sep string) error {
-	if err := c.createMigTable(ctx); err != nil {
+	if err := c.createMigTable(); err != nil {
 		return err
 	}
 	files, err := os.ReadDir(dir)
@@ -195,7 +312,7 @@ func (c *DBClient) RunMigrationsContext(ctx context.Context, dir, sep string) er
 	// and compare its content with the one in the database
 	// and apply the migration if it hasn't been applied
 	for _, f := range files {
-		if err := validateFile(f, sep); err != nil {
+		if err := validateFilename(f.Name(), sep); err != nil {
 			return err
 		}
 		sqlBytes, err := os.ReadFile(filepath.Join(dir, f.Name()))
@@ -210,7 +327,7 @@ func (c *DBClient) RunMigrationsContext(ctx context.Context, dir, sep string) er
 		if errQ != nil {
 			if errors.Is(errQ, sql.ErrNoRows) {
 				// Migration content not found, write to db
-				if err = c.updateMigDB(ctx, f.Name(), sqlBytes); err != nil {
+				if err = c.updateMigDB(f.Name(), sqlBytes); err != nil {
 					return err
 				}
 				// move to next file
@@ -234,6 +351,37 @@ func (c *DBClient) RunMigrationsContext(ctx context.Context, dir, sep string) er
 		return fmt.Errorf("%w: %s", ErrMigContentChanged, f.Name())
 	}
 	return nil
+}
+
+// ListMigrationsContext lists all migrations that have been applied to the database.
+//
+// c is the database client.
+//
+// ctx is the context.
+//
+// This function:
+// - Creates the migrations table if it doesn't exist
+//
+// - Returns a list of all applied migration files
+func (c *DBClient) ListMigrations() ([]string, error) {
+	rows, err := c.ReadPool.Query(`SELECT name FROM migrations`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			fmt.Printf("Row Close error: %v\n", err)
+		}
+	}()
+	var migrations []string
+	for rows.Next() {
+		var migration string
+		if err = rows.Scan(&migration); err != nil {
+			return nil, err
+		}
+		migrations = append(migrations, migration)
+	}
+	return migrations, nil
 }
 
 // ListMigrationsContext lists all migrations that have been applied to the database.

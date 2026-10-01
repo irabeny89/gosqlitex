@@ -2,6 +2,8 @@ package gosqlitex
 
 import (
 	"database/sql"
+
+	_ "modernc.org/sqlite"
 )
 
 // DBPool creates a db pool for sqlite.
@@ -13,11 +15,11 @@ import (
 // and -wal files and the "reader" connection (ro) cannot create them.
 // 
 // 🆒 Better to use the DBclient to get an optimized db read and write pools.
-func DBPool(Dsn string, maxConn int) (*sql.DB, error) {
-	if Dsn == "" {
+func DBPool(dsn string, maxConn int) (*sql.DB, error) {
+	if dsn == "" {
 		return nil, ErrInvalidDSN
 	}
-	db, err := sql.Open(dbDriver, Dsn)
+	db, err := sql.Open(dbDriver, dsn)
 	if err != nil {
 		return nil, err
 	}

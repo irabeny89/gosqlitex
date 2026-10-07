@@ -93,19 +93,6 @@ func requiredArgs(args *ParsedArgs, requiredFields ...string) bool {
 	return ok
 }
 
-func getDBClient(dsn string) (*gosqlitex.DBClient, error) {
-	dbClient, err := gosqlitex.NewDBClient(&gosqlitex.DBConfig{
-		Dsn: dsn,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := dbClient.Ping(); err != nil {
-		return nil, err
-	}
-	return dbClient, nil
-}
-
 func main() {
 	log := func(msg string, err error) {
 		if err != nil {
@@ -134,7 +121,7 @@ func main() {
 	// run all migration files
 	// e.g mig8 --db app.db --dir ./migrations --run
 	if requiredArgs(parsedArgs, "db", "dir") {
-		db, err := getDBClient(parsedArgs.db)
+		db, err := gosqlitex.DiskDB(parsedArgs.db)
 		if err != nil {
 			log("failed to create db client", err)
 		}
@@ -147,7 +134,7 @@ func main() {
 	}
 	// run a migration file
 	if requiredArgs(parsedArgs, "db", "dir", "file") {
-		db, err := getDBClient(parsedArgs.db)
+		db, err := gosqlitex.DiskDB(parsedArgs.db)
 		if err != nil {
 			log("failed to create db client", err)
 		}

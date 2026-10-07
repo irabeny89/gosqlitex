@@ -15,14 +15,6 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// Config holds the configuration for opening a new database connection pool.
-type DBConfig struct {
-	// Dsn is a data source name for db file path or memory e.g app.db or :memory:
-	Dsn string
-	// pragmas are the pragmas to use for the database connection. E.g []string{"journal_mode(WAL)", "busy_timeout(5000)", "foreign_keys(ON)"}
-	Pragma []string
-}
-
 // DBClient is a client that is used for reading and writing to the database.
 // It manages a read pool for concurrent reads and a single-connection write pool
 // to ensure write safety and optimal performance with SQLite WAL mode.
@@ -426,57 +418,16 @@ func (c *DBClient) Close() error {
 	return nil
 }
 
-// NewDBClient creates a new DBClient with the given configuration.
-//
-// ℹ️ Hint: Ignore Pragma field and pass only Dsn for optimal performance configuration
-func NewDBClient(cnf *DBConfig) (*DBClient, error) {
-	if cnf.Pragma == nil {
-		cnf.Pragma = pragma
-	}
+// DiskDB creates a new DBClient with the given path.
+func DiskDB(path string) (*DBClient, error) {
+	rDSN := createDSN(path, true, false)
+	wDSN := createDSN(path, false, false)
+	return setupPools(rDSN, wDSN)
+}
 
-	// 1. Separate read-safe pragmas from write-specific structural pragmas
-	var readPragmas []string
-	//  Fixed Filtering Logic
-	for _, p := range cnf.Pragma {
-		lowerP := strings.ToLower(p)
-		// Do NOT copy journal_mode OR synchronous settings into the read-only pool
-		if !strings.HasPrefix(lowerP, "journal_mode") && !strings.HasPrefix(lowerP, "synchronous") && !strings.HasPrefix(lowerP, "cache(") {
-			readPragmas = append(readPragmas, p)
-		}
-	}
-
-	// 2. Open the WRITE pool FIRST so it physically creates the database file
-	wDSN, err := parseDSN(cnf.Dsn, writeDBMode, cnf.Pragma)
-	if err != nil {
-		return nil, err
-	}
-	wPool, err := DBPool(wDSN, writeDBMaxConn)
-	if err != nil {
-		return nil, err
-	}
-
-	// Ping the write pool immediately to force file creation and execute WAL activation
-	if err := wPool.Ping(); err != nil {
-		wPool.Close()
-		return nil, fmt.Errorf("failed to initialize write pool: %w", err)
-	}
-
-	// 3. Open the READ pool SECOND now that the database file exists
-	rDSN, err := parseDSN(cnf.Dsn, readDBMode, readPragmas)
-	if err != nil {
-		wPool.Close()
-		return nil, err
-	}
-	rPool, err := DBPool(rDSN, readDBMaxConn)
-	if err != nil {
-		wPool.Close()
-		return nil, err
-	}
-
-	client := &DBClient{
-		ReadPool:  rPool,
-		WritePool: wPool,
-	}
-
-	return client, nil
+func MemoryDB() (*DBClient, error) {
+	path := "file:memdb"
+	rDSN := createDSN(path, true, true)
+	wDSN := createDSN(path, false, true)
+	return setupPools(rDSN, wDSN)
 }

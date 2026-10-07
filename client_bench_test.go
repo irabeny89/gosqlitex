@@ -1,6 +1,7 @@
 package gosqlitex
 
 import (
+	"path/filepath"
 	"strconv"
 	"testing"
 )
@@ -8,9 +9,8 @@ import (
 // BenchmarkParallelReads measures how fast ReadPool scales across CPU cores.
 func BenchmarkParallelReads(b *testing.B) {
 	b.Run("Reads concurrently", func(b *testing.B) {
-		// Initialize the client using your robust test path
-		dsn := testDBPath(b, true) // Pass your testing framework handle
-		client, err := NewDBClient(&DBConfig{Dsn: dsn})
+		path := filepath.Join(b.TempDir(), d)
+		client, err := DiskDB(path)
 		if err != nil {
 			b.Fatalf("failed to open database: %v", err)
 		}
@@ -41,9 +41,8 @@ func BenchmarkParallelReads(b *testing.B) {
 		})
 	})
 	b.Run("Reads concurrently on memory", func(b *testing.B) {
-		// Initialize the client using your robust test path
-		dsn := testDBPath(b, false) // Pass your testing framework handle
-		client, err := NewDBClient(&DBConfig{Dsn: dsn})
+		path := filepath.Join(b.TempDir(), d)
+		client, err := DiskDB(path)
 		if err != nil {
 			b.Fatalf("failed to open database: %v", err)
 		}
@@ -78,8 +77,8 @@ func BenchmarkParallelReads(b *testing.B) {
 // BenchmarkParallelWrites measures how Write-Ahead Logging handles concurrent writes.
 func BenchmarkParallelWrites(b *testing.B) {
 	b.Run("Writes concurrently", func(b *testing.B) {
-		dsn := testDBPath(b, true)
-		client, err := NewDBClient(&DBConfig{Dsn: dsn})
+		path := filepath.Join(b.TempDir(), d)
+		client, err := DiskDB(path)
 		if err != nil {
 			b.Fatalf("failed to open database: %v", err)
 		}
@@ -109,8 +108,8 @@ func BenchmarkParallelWrites(b *testing.B) {
 		})
 	})
 	b.Run("Writes concurrently on memory", func(b *testing.B) {
-		dsn := testDBPath(b, false)
-		client, err := NewDBClient(&DBConfig{Dsn: dsn})
+		path := filepath.Join(b.TempDir(), d)
+		client, err := DiskDB(path)
 		if err != nil {
 			b.Fatalf("failed to open database: %v", err)
 		}

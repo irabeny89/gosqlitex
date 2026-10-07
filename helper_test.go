@@ -1,94 +1,154 @@
 package gosqlitex
 
 import (
-	"fmt"
 	"testing"
 )
 
-func Test_parseDSN(t *testing.T) {
-	dsns := []string{
-		"./test.db",
-		":memory:",
-	}
-	modes := []string{
-		"rwc",
-		"ro",
-	}
-	
+func Test_validateFilename(t *testing.T) {
 	tests := []struct {
-		name string // description of this test case
+		title string // description of this test case
 		// Named input parameters for target function.
-		Dsn     string
-		mode    string
-		pragma  []string
-		want    string
+		name    string
+		sep     string
 		wantErr bool
 	}{
 		{
-			name:   "Disk storage with relative path and no pragma",
-			Dsn:    dsns[0],
-			mode:   modes[0],
-			pragma: nil,
-			want:   fmt.Sprintf("file://%s?mode=%s", dsns[0], modes[0]),
+			title:   "valid filename",
+			name:    "11111111_create_table.sql",
+			sep:     "_",
 			wantErr: false,
 		},
 		{
-			name:   "Memory storage with relative path and no pragma",
-			Dsn:    dsns[1],
-			mode:   modes[0],
-			pragma: nil,
-			want:   fmt.Sprintf("file:%s?cache=shared&mode=%s", memDBName, modes[0]),
-			wantErr: false,
-		},
-		{
-			name:   "Set default rwc mode on empty mode string value",
-			Dsn:    dsns[0],
-			mode:   "",
-			pragma: nil,
-			want:   fmt.Sprintf("file://%s?mode=%s", dsns[0], modes[0]),
-			wantErr: false,
-		},
-		{
-			name:   "Error on empty Dsn",
-			Dsn:    "",
-			mode:   "",
-			pragma: nil,
-			want:   "",
+			title:   "invalid filename",
+			name:    "test.sql",
+			sep:     "_",
 			wantErr: true,
 		},
 		{
-			name:   "Error if Dsn is prefixed with file://",
-			Dsn:    "file://",
-			mode:   "",
-			pragma: nil,
-			want:   "",
+			title:   "valid filename, incorrect separator",
+			name:    "11111111_create_table",
+			sep:     "-",
 			wantErr: true,
 		},
 		{
-			name:   "Error if Dsn is suffixed with ?",
-			Dsn:    "test.db?mode=rwc",
-			mode:   "",
-			pragma: nil,
-			want:   "",
+			title:   "invalid filename, correct separator",
+			name:    "create_table.sql",
+			sep:     "-",
 			wantErr: true,
 		},
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := parseDSN(tt.Dsn, tt.mode, tt.pragma)
+			gotErr := validateFilename(tt.name, tt.sep)
 			if gotErr != nil {
 				if !tt.wantErr {
-					t.Errorf("parseDSN() failed: %v", gotErr)
+					t.Errorf("validateFilename() failed: %v", gotErr)
 				}
 				return
 			}
 			if tt.wantErr {
-				t.Fatal("parseDSN() succeeded unexpectedly")
+				t.Fatal("validateFilename() succeeded unexpectedly")
 			}
-			// TODO: update the condition below to compare got with tt.want.
+		})
+	}
+}
+
+func Test_createDSN(t *testing.T) {
+	diskPath, memPath := "test.db", "file:memdb"
+	rQuery := "?_pragma=journal_mode%28WAL%29&_pragma=busy_timeout%285000%29&_pragma=foreign_keys%28ON%29&_pragma=cache_size%28-64000%29&_pragma=temp_store%28MEMORY%29&_pragma=mmap_size%28268435456%29&_pragma=synchronous%28NORMAL%29&mode=ro"
+	wQuery := "?_pragma=journal_mode%28WAL%29&_pragma=busy_timeout%285000%29&_pragma=foreign_keys%28ON%29&_pragma=cache_size%28-64000%29&_pragma=temp_store%28MEMORY%29&_pragma=mmap_size%28268435456%29&_pragma=synchronous%28NORMAL%29&mode=rwc"
+	rMemQuery := "?_pragma=journal_mode%28WAL%29&_pragma=busy_timeout%285000%29&_pragma=foreign_keys%28ON%29&_pragma=cache_size%28-64000%29&_pragma=temp_store%28MEMORY%29&_pragma=mmap_size%28268435456%29&_pragma=synchronous%28NORMAL%29&_pragma=query_only%28ON%29&cache=shared&mode=memory"
+	wMemQuery := "?_pragma=journal_mode%28WAL%29&_pragma=busy_timeout%285000%29&_pragma=foreign_keys%28ON%29&_pragma=cache_size%28-64000%29&_pragma=temp_store%28MEMORY%29&_pragma=mmap_size%28268435456%29&_pragma=synchronous%28NORMAL%29&cache=shared&mode=memory"
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		path     string
+		isRead   bool
+		isMemory bool
+		want     string
+	}{
+		{
+			name:     "disk read dsn",
+			path:     diskPath,
+			isRead:   true,
+			isMemory: false,
+			want:     diskPath + rQuery,
+		},
+		{
+			name:     "disk write dsn",
+			path:     diskPath,
+			isRead:   false,
+			isMemory: false,
+			want:     diskPath + wQuery,
+		},
+		{
+			name:     "memory read dsn",
+			path:     memPath,
+			isRead:   true,
+			isMemory: true,
+			want:     memPath + rMemQuery,
+		},
+		{
+			name:     "memory write dsn",
+			path:     memPath,
+			isRead:   false,
+			isMemory: true,
+			want:     memPath + wMemQuery,
+		},
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := createDSN(tt.path, tt.isRead, tt.isMemory)
 			if got != tt.want {
-				t.Errorf("parseDSN() = %v, want %v", got, tt.want)
+				t.Errorf("createDSN() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_setupPools(t *testing.T) {
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		rDSN    string
+		wDSN    string
+		wantErr bool
+	}{
+		{
+			name:    "setupPools success for disk",
+			rDSN:    "test.db",
+			wDSN:    "test.db",
+			wantErr: false,
+		},
+		{
+			name:    "setupPools success for memory",
+			rDSN:    "file:memdb?mode=memory",
+			wDSN:    "file:memdb?mode=memory",
+			wantErr: false,
+		},
+
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := setupPools(tt.rDSN, tt.wDSN)
+			if gotErr != nil {
+				if !tt.wantErr {
+					t.Errorf("setupPools() failed: %v", gotErr)
+				}
+				return
+			}
+			if tt.wantErr {
+				t.Fatal("setupPools() succeeded unexpectedly")
+			}
+			wErr, rErr := got.WritePool.Ping(), got.ReadPool.Ping()
+			if wErr != nil {
+				t.Errorf("expect write pool to ping, got %v", wErr)
+			}
+			if rErr != nil {
+				t.Errorf("expect read pool to ping, got %v", rErr)
 			}
 		})
 	}

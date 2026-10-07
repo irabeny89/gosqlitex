@@ -3,11 +3,13 @@ package gosqlitex
 import (
 	"fmt"
 	"net/url"
-	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
 
+// validateFilename checks that the migration filename is valid.
+// It must be in the format <timestamp><separator><name>.sql
 func validateFilename(name, sep string) error {
 	// split the filename on the first separator to get the timestamp.
 	v, _, ok := strings.Cut(name, sep)
@@ -25,80 +27,58 @@ func validateFilename(name, sep string) error {
 	return nil
 }
 
-// parseDSN parses and validates data source name then return the cleaned and optimized string.
-//
-// Dsn is expected to be absolute, relative (e.g app.db) or just :memory:.
-//
-// mode is the mode to use for the database connection (e.g. "ro", "rw", "rwc" & "memory". Default is "rwc" ).
-//
-// pragma can be string slice of:
-//
-// - "journal_mode(WAL)"
-//
-// - "busy_timeout(5000)"
-//
-// - "foreign_keys(ON)"
-//
-// - "cache_size(64)"
-//
-// - "temp_store(MEMORY)"
-//
-// - "mmap_size(268435456)"
-func parseDSN(dsn, mode string, pragma []string) (string, error) {
-	if dsn == "" {
-		return "", ErrEmptyDSN
-	}
-
-	if strings.HasPrefix(dsn, "file:") || strings.Contains(dsn, "?") {
-		return "", ErrInvalidDSN
-	}
-
-	if mode == "" {
-		mode = "rwc"
-	}
-
-	query := url.Values{
-		"mode":    []string{mode},
-		"_pragma": pragma,
-	}
-
-	// Check if it's an in-memory configuration
-	// If the user passes ":memory:" or a named variant like "file:memdb_xxx",
-	// ensure they map cleanly to a unique memory block.
-	if strings.HasPrefix(dsn, ":memory:") {
-		query.Set("cache", "shared")
-
-		// If they pass an exact name like ":memory:test1", strip the prefix to use as the name.
-		// Fall back to value of memDBName if it's just raw ":memory:".
-		memName := memDBName
-		if len(dsn) > 8 {
-			memName = dsn[8:]
+// createDSN constructs a DSN (Data Source Name) for the database connection
+func createDSN(path string, isRead, isMemory bool) string {
+	var query url.Values
+	if isRead {
+		readPragma := slices.DeleteFunc(pragma, func(p string) bool {
+			return p == "journal_mode" || p == "synchronous" || strings.HasPrefix(p, "cache(")
+		})
+		query = url.Values{
+			"_pragma": readPragma,
 		}
-
-		clean := url.URL{
-			Scheme:   "file",
-			Opaque:   memName,
-			RawQuery: query.Encode(),
+		if isMemory {
+			query.Add("_pragma", "query_only(ON)")
+			query.Set("cache", "shared")
+			query.Set("mode", "memory")
+		} else {
+			query.Set("mode", readDBMode)
 		}
-		return clean.String(), nil
-	}
-
-	var dsnString string
-	if filepath.IsAbs(dsn) {
-		clean := url.URL{
-			Scheme:   "file",
-			Host:     "",
-			Path:     filepath.ToSlash(dsn),
-			RawQuery: query.Encode(),
-		}
-		dsnString = clean.String()
 	} else {
-		encodedQuery := query.Encode()
-		dsnString = fmt.Sprintf("file://%s", filepath.ToSlash(dsn))
-		if encodedQuery != "" {
-			dsnString = fmt.Sprintf("%s?%s", dsnString, encodedQuery)
+		query = url.Values{
+			"_pragma": pragma,
+		}
+		if isMemory {
+			query.Set("mode", "memory")
+			query.Set("cache", "shared")
+		} else {
+			query.Set("mode", writeDBMode)
 		}
 	}
+	return fmt.Sprintf("%s?%s", path, query.Encode())
+}
 
-	return dsnString, nil
+// setupPools initializes the read and write pools for the database client
+func setupPools(rDSN, wDSN string) (*DBClient, error) {
+	// NOTE: Open the WRITE pool FIRST so it physically creates the database file
+	wPool, err := DBPool(wDSN, writeDBMaxConn)
+	if err != nil {
+		return nil, err
+	}
+	// Ping the write pool immediately to force file creation and execute WAL activation
+	if err := wPool.Ping(); err != nil {
+		wPool.Close()
+		return nil, fmt.Errorf("failed to initialize write pool: %w", err)
+	}
+	rPool, err := DBPool(rDSN, readDBMaxConn)
+	if err != nil {
+		wPool.Close()
+		return nil, err
+	}
+	if err := rPool.Ping(); err != nil {
+		rPool.Close()
+		wPool.Close()
+		return nil, fmt.Errorf("failed to initialize read pool: %w", err)
+	}
+	return &DBClient{ReadPool: rPool, WritePool: wPool}, nil
 }

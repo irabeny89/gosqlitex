@@ -3,11 +3,7 @@ package gosqlitex
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"sync"
-	"time"
-
-	// "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,28 +12,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const (
-	d = "test.db"
-	m = ":memory:"
-)
-
-func testDBPath(t testing.TB, disk bool) string {
-	if !disk {
-		// Sanitize the base name
-		safeName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
-		// Append a Unix timestamp (nanoseconds) to ensure a truly unique name
-		// for every individual execution run.
-		uniqueID := strconv.FormatInt(time.Now().UnixNano(), 10)
-		return ":memory:" + safeName + "_" + uniqueID
-	}
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	return filepath.ToSlash(dbPath)
-}
+const d = "test.db"
 
 func TestOpen(t *testing.T) {
 	t.Run("expect db to open and ping successfully", func(t *testing.T) {
-		Dsn := testDBPath(t, true)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		path := filepath.Join(t.TempDir(), d)
+		client, err := DiskDB(path)
 
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
@@ -48,8 +28,7 @@ func TestOpen(t *testing.T) {
 		}
 	})
 	t.Run("expect db to open and ping successfully on memory", func(t *testing.T) {
-		Dsn := testDBPath(t, false)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		client, err := MemoryDB()
 
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
@@ -68,8 +47,8 @@ func TestExecAndQuery(t *testing.T) {
 	selectAllQ := "SELECT name FROM users"
 
 	t.Run("expect exec and query to work", func(t *testing.T) {
-		Dsn := testDBPath(t, true)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		path := filepath.Join(t.TempDir(), d)
+		client, err := DiskDB(path)
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
 		}
@@ -112,8 +91,7 @@ func TestExecAndQuery(t *testing.T) {
 		}
 	})
 	t.Run("expect exec and query to work on memory", func(t *testing.T) {
-		Dsn := testDBPath(t, false)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		client, err := MemoryDB()
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
 		}
@@ -164,8 +142,8 @@ func TestConcurrency(t *testing.T) {
 	updateQ := "UPDATE counters SET val = val + 1 WHERE id = 1"
 
 	t.Run("expect concurrent reads while writing", func(t *testing.T) {
-		Dsn := testDBPath(t, true)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		path := filepath.Join(t.TempDir(), d)
+		client, err := DiskDB(path)
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
 		}
@@ -219,8 +197,7 @@ func TestConcurrency(t *testing.T) {
 		}
 	})
 	t.Run("expect concurrent reads while writing on memory", func(t *testing.T) {
-		Dsn := testDBPath(t, false)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		client, err := MemoryDB()
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
 		}
@@ -276,13 +253,13 @@ func TestConcurrency(t *testing.T) {
 }
 
 func TestTransactionsAndContext(t *testing.T) {
-	createQ := "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)"
+	createQ := "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT)"
 	insertQ := "INSERT INTO users (name) VALUES (?)"
 	selectQ := "SELECT name FROM users WHERE name = ?"
 	selectOQ := "SELECT name FROM users ORDER BY name"
 	t.Run("expect transactions and context to work", func(t *testing.T) {
-		Dsn := testDBPath(t, true)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		path := filepath.Join(t.TempDir(), d)
+		client, err := DiskDB(path)
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
 		}
@@ -349,8 +326,7 @@ func TestTransactionsAndContext(t *testing.T) {
 		}
 	})
 	t.Run("expect transactions and context to work on memory", func(t *testing.T) {
-		Dsn := testDBPath(t, false)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		client, err := MemoryDB()
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
 		}
@@ -425,8 +401,8 @@ func TestPrepare(t *testing.T) {
 	selectOQ := "SELECT val FROM items"
 
 	t.Run("expect Prepare to work", func(t *testing.T) {
-		Dsn := testDBPath(t, true)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		path := filepath.Join(t.TempDir(), d)
+		client, err := DiskDB(path)
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
 		}
@@ -488,8 +464,7 @@ func TestPrepare(t *testing.T) {
 		stmt.Close()
 	})
 	t.Run("expect Prepare to work on memory", func(t *testing.T) {
-		Dsn := testDBPath(t, false)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		client, err := MemoryDB()
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
 		}
@@ -554,8 +529,8 @@ func TestPrepare(t *testing.T) {
 
 func TestClose(t *testing.T) {
 	t.Run("expect close to work", func(t *testing.T) {
-		Dsn := testDBPath(t, true)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		path := filepath.Join(t.TempDir(), d)
+		client, err := DiskDB(path)
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
 		}
@@ -568,8 +543,7 @@ func TestClose(t *testing.T) {
 		}
 	})
 	t.Run("expect close to work on memory", func(t *testing.T) {
-		Dsn := testDBPath(t, false)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		client, err := MemoryDB()
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
 		}
@@ -585,8 +559,8 @@ func TestClose(t *testing.T) {
 
 func TestMigrations(t *testing.T) {
 	t.Run("expect migrations to work", func(t *testing.T) {
-		Dsn := testDBPath(t, true)
-		client, err := NewDBClient(&DBConfig{Dsn: Dsn})
+		path := filepath.Join(t.TempDir(), d)
+		client, err := DiskDB(path)
 		if err != nil {
 			t.Fatalf("failed to open database: %v", err)
 		}
@@ -598,7 +572,7 @@ func TestMigrations(t *testing.T) {
 
 		// Create a valid migration file
 		mig1 := fmt.Sprintf("20230101000000%sinit.sql", sep)
-		sql1 := "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);"
+		sql1 := "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT);"
 		if err = os.WriteFile(filepath.Join(migDir, mig1), []byte(sql1), 0644); err != nil {
 			t.Fatalf("failed to write mig1: %v", err)
 		}
@@ -651,7 +625,7 @@ func TestMigrations(t *testing.T) {
 
 func TestInvalidMigrations(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test_invalid_mig.db")
-	client, err := NewDBClient(&DBConfig{Dsn: dbPath})
+	client, err := DiskDB(dbPath)
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}

@@ -141,6 +141,8 @@ func main() {
 
 `gosqlitex` is designed to handle the nuances of SQLite concurrency:
 
+> click to visit for diagrams - [here](https://gitdiagram.com/irabeny89/gosqlitex)
+
 1. **Read Pool**: Uses multiple connections to allow concurrent read operations.
 2. **Write Pool**: Uses a single connection to serialize writes, preventing "database is locked" errors while maintaining high throughput via WAL mode.
 

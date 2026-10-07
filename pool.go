@@ -14,7 +14,7 @@ import (
 // This is because WAL mode requires the "writer" connection (rwc) to create the -shm
 // and -wal files and the "reader" connection (ro) cannot create them.
 // 
-// 🆒 Better to use the DBclient to get an optimized db read and write pools.
+// 🆒 Better to use the DiskDB or MemoryDB to get an optimized db read and write pools.
 func DBPool(dsn string, maxConn int) (*sql.DB, error) {
 	if dsn == "" {
 		return nil, ErrInvalidDSN

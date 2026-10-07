@@ -51,6 +51,8 @@ go get github.com/irabeny89/gosqlitex
 
 ## Usage
 
+The example below creates an optimized DB client(disk or memory) and intelligently decides if read or write pool should be used.
+
 ```go
 package main
 
@@ -62,19 +64,13 @@ import (
 
 func main() {
  // Initialize the client
- client, err := gosqlitex.NewDBClient(&gosqlitex.DBConfig{
-    Dsn: "app.db",
-    // Pragma: []string{} <-- optional custom pragmas if you don't want the default ones
- })
+ client, err := gosqlitex.DiskDB("app.db")
+ // Or for in-memory use MemoryDB
+ // client, err := gosqlitex.MemoryDB()
  if err != nil {
   log.Fatal(err)
  }
  defer client.Close()
-
- // Ping the database
- if err := client.Ping(); err != nil {
-  log.Fatal(err)
- }
 
  // Execute a write operation
  _, err = client.Exec("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT)")
@@ -97,74 +93,63 @@ func main() {
 }
 ```
 
-## Configuration
-
-### Simple Configuration
-
-The easiest way to get started is by providing a database path. `gosqlitex` will automatically apply optimized configurations.
+You can create each pool yourself with `CreateDSN` and `DBPool`.
 
 ```go
-// DbPath and Driver are optional - default values will be used if not provided
-client, err := gosqlitex.NewDBClient(&gosqlitex.DBConfig{
-    Dsn: "app.db", // default if not provided
-})
-```
+package main
 
-### Advanced Configuration (Manual DSN)
+import (
+ "fmt"
+ "log"
+ "github.com/irabeny89/gosqlitex"
+)
 
-For full control over the SQLite connection (e.g., in-memory databases, custom pragmas), you can provide manual Data Source Names (DSNs) for both reading and writing.
-
-```go
-cnf := &gosqlitex.DBConfig{
-  Dsn: app.db,
-  Pragma: []string{
-    "cache_size=10000",
-    "mmap_size=30000000000",
-    "busy_timeout=5000",
-  },
+func main() {
+	// write-able data source name (disk file path) with optimized defaults
+	dsn := gosqlitex.CreateDSN("app.db", false, false)
+	db, err := gosqlitex.DBPool(dsn, 10)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
 }
-client, err := gosqlitex.NewDBClient(cnf)
 ```
 
-Example of configuration for an in-memory database
+You can also manually configure a database client.
 
 ```go
-cnf := &gosqlitex.DBConfig{
-  Dsn: ":memory:",
-  // Pragma: []string{
-  //   "journal_mode=WAL",
-  //   "synchronous=NORMAL",
-  //   "cache_size=10000",
-  //   "mmap_size=30000000000",
-  //   "busy_timeout=5000",
-  // }, <-- optional, default pragmas will be applied
+package main
+
+import (
+ "fmt"
+ "log"
+ "github.com/irabeny89/gosqlitex"
+)
+
+func main() {
+	// just like regular SQLite datasource name, add pragmas etc
+	dsn := "app.db?mode=rwc"
+	db, err := gosqlitex.DBPool(dsn, 10)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
 }
-client, err := gosqlitex.NewDBClient(cnf)
-```
-
-If you don't want the read and write pools, you can use the `DBPool` function directly and use like regular.
-
-```go
-pool, err := gosqlitex.DBPool("app.db", 8)
 ```
 
 ## Architecture
 
 `gosqlitex` is designed to handle the nuances of SQLite concurrency:
 
-1. **Read Pool**: Uses multiple connections (default: 8) to allow concurrent read operations.
+1. **Read Pool**: Uses multiple connections to allow concurrent read operations.
 2. **Write Pool**: Uses a single connection to serialize writes, preventing "database is locked" errors while maintaining high throughput via WAL mode.
 
 ## API Reference
 
-### `NewDBClient(cnf *Config) (*DbClient, error)`
-
-Initializes the database client.
-
-| Field    | Type       | Description                                                        |
-| :------- | :--------- | :----------------------------------------------------------------- |
-| `Dsn`    | `string`   | Path to the SQLite database file or memory e.g app.db or :memory:. |
-| `Pragma` | `[]string` | List of pragma to apply. It already comes with optimized defaults. |
+- `DiskDB(path string) (*DbClient, error)`: creates a new DBClient with the given path.
+- `MemoryDB() (*DbClient, error)`: creates a new DBClient with an in-memory database.
+- `CreateDSN(path string, isRead, isMemory bool) string`: constructs a DSN (Data Source Name) for the database connection.
+- `DBPool(dsn string, maxConnections int) (*DbClient, error)`: creates a db pool for sqlite.
 
 ### `DbClient` Methods
 
@@ -191,17 +176,6 @@ Initializes the database client.
 Use `go test` to run the test suite. Use `go test -bench=.` to run benchmarks.
 
 - `BenchmarkParallelReads` measures how fast `ReadPool` scales across CPU cores.
-
-```sh
-goos: darwin
-goarch: amd64
-pkg: github.com/irabeny89/gosqlitex
-cpu: Intel(R) Core(TM) i5-1038NG7 CPU @ 2.00GHz
-BenchmarkParallelReads-8   	  432874	      2738 ns/op	     460 B/op	      16 allocs/op
-PASS
-ok  	github.com/irabeny89/gosqlitex	3.713s
-```
-
 - `BenchmarkParallelWrites` measures how `Write-Ahead Logging` handles concurrent writes.
 
 ```sh
@@ -209,9 +183,10 @@ goos: darwin
 goarch: amd64
 pkg: github.com/irabeny89/gosqlitex
 cpu: Intel(R) Core(TM) i5-1038NG7 CPU @ 2.00GHz
-BenchmarkParallelWrites-8   	   29565	     38224 ns/op	     312 B/op	      11 allocs/op
-PASS
-ok  	github.com/irabeny89/gosqlitex	2.723s
+BenchmarkParallelReads/Reads_concurrently-8         	  586167	      2031 ns/op	     460 B/op	      16 allocs/op
+BenchmarkParallelReads/Reads_concurrently_on_memory-8         	  632918	      2131 ns/op	     460 B/op	      16 allocs/op
+BenchmarkParallelWrites/Writes_concurrently-8                 	   38444	     31028 ns/op	     312 B/op	      11 allocs/op
+BenchmarkParallelWrites/Writes_concurrently_on_memory-8       	   38133	     36770 ns/op	     312 B/op	      11 allocs/op
 ```
 
 ## Migrations CLI

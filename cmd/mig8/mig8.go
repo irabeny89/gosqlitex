@@ -1,3 +1,4 @@
+// mig8 is a CLI tool for managing database migrations.
 package main
 
 import (

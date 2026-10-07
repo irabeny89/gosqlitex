@@ -419,15 +419,19 @@ func (c *DBClient) Close() error {
 }
 
 // DiskDB creates a new DBClient with the given path.
+// 
+// You do not need to ping because the connections are already confirmed.
 func DiskDB(path string) (*DBClient, error) {
-	rDSN := createDSN(path, true, false)
-	wDSN := createDSN(path, false, false)
+	rDSN := CreateDSN(path, true, false)
+	wDSN := CreateDSN(path, false, false)
 	return setupPools(rDSN, wDSN)
 }
-
+// MemoryDB creates a new DBClient with an in-memory database.
+//
+// You do not need to ping because the connections are already confirmed.
 func MemoryDB() (*DBClient, error) {
 	path := "file:memdb"
-	rDSN := createDSN(path, true, true)
-	wDSN := createDSN(path, false, true)
+	rDSN := CreateDSN(path, true, true)
+	wDSN := CreateDSN(path, false, true)
 	return setupPools(rDSN, wDSN)
 }

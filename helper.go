@@ -1,3 +1,5 @@
+// helper package contains utility functions for the gosqlitex package.
+
 package gosqlitex
 
 import (
@@ -27,8 +29,10 @@ func validateFilename(name, sep string) error {
 	return nil
 }
 
-// createDSN constructs a DSN (Data Source Name) for the database connection
-func createDSN(path string, isRead, isMemory bool) string {
+// CreateDSN constructs a DSN (Data Source Name) for the database connection.
+// 
+// You only pass the file path or named memory e.g file:memdb for each pool instance. The pragma and other configurations are set automatically.
+func CreateDSN(path string, isRead, isMemory bool) string {
 	var query url.Values
 	if isRead {
 		readPragma := slices.DeleteFunc(pragma, func(p string) bool {
@@ -58,7 +62,9 @@ func createDSN(path string, isRead, isMemory bool) string {
 	return fmt.Sprintf("%s?%s", path, query.Encode())
 }
 
-// setupPools initializes the read and write pools for the database client
+// setupPools initializes the read and write pools for the database client.
+// 
+// You do not need to ping the pools because they are pinged and confirmed ready.
 func setupPools(rDSN, wDSN string) (*DBClient, error) {
 	// NOTE: Open the WRITE pool FIRST so it physically creates the database file
 	wPool, err := DBPool(wDSN, writeDBMaxConn)

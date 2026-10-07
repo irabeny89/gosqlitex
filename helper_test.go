@@ -54,7 +54,7 @@ func Test_validateFilename(t *testing.T) {
 	}
 }
 
-func Test_createDSN(t *testing.T) {
+func Test_CreateDSN(t *testing.T) {
 	diskPath, memPath := "test.db", "file:memdb"
 	rQuery := "?_pragma=journal_mode%28WAL%29&_pragma=busy_timeout%285000%29&_pragma=foreign_keys%28ON%29&_pragma=cache_size%28-64000%29&_pragma=temp_store%28MEMORY%29&_pragma=mmap_size%28268435456%29&_pragma=synchronous%28NORMAL%29&mode=ro"
 	wQuery := "?_pragma=journal_mode%28WAL%29&_pragma=busy_timeout%285000%29&_pragma=foreign_keys%28ON%29&_pragma=cache_size%28-64000%29&_pragma=temp_store%28MEMORY%29&_pragma=mmap_size%28268435456%29&_pragma=synchronous%28NORMAL%29&mode=rwc"
@@ -100,9 +100,9 @@ func Test_createDSN(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := createDSN(tt.path, tt.isRead, tt.isMemory)
+			got := CreateDSN(tt.path, tt.isRead, tt.isMemory)
 			if got != tt.want {
-				t.Errorf("createDSN() = %v, want %v", got, tt.want)
+				t.Errorf("CreateDSN() = %v, want %v", got, tt.want)
 			}
 		})
 	}

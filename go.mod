@@ -1,4 +1,4 @@
-module github.com/irabeny89/gosqlitex
+module github.com/irabeny89/gosqlitex/v2
 
 go 1.26.2
 

@@ -2,7 +2,7 @@ package gosqlitex_test
 
 import(
 	"database/sql"
-	"github.com/irabeny89/gosqlitex"
+	"github.com/irabeny89/gosqlitex/v2"
 	"testing"
 )
 

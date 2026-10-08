@@ -1,17 +1,12 @@
 # gosqlitex
 
 <!--toc:start-->
-
 - [gosqlitex](#gosqlitex)
   - [Features](#features)
   - [Installation](#installation)
   - [Usage](#usage)
-  - [Configuration](#configuration)
-    - [Simple Configuration](#simple-configuration)
-    - [Advanced Configuration (Manual DSN)](#advanced-configuration-manual-dsn)
   - [Architecture](#architecture)
   - [API Reference](#api-reference)
-    - [`Open(cnf *Config) (*DbClient, error)`](#opencnf-config-dbclient-error)
     - [`DbClient` Methods](#dbclient-methods)
     - [Testing And Benchmarking](#testing-and-benchmarking)
   - [Migrations CLI](#migrations-cli)
@@ -24,8 +19,9 @@
       - [Common Commands](#common-commands)
     - [Migration Safety](#migration-safety)
   - [License](#license)
-
 <!--toc:end-->
+
+
 
 `gosqlitex` is a high-performance SQLite wrapper for Go, optimized for concurrency and safety using SQLite's **Write-Ahead Logging (WAL)** mode.
 
@@ -46,7 +42,7 @@ It manages separate connection pools for reading and writing:
 ## Installation
 
 ```bash
-go get github.com/irabeny89/gosqlitex
+go get github.com/irabeny89/gosqlitex/v2
 ```
 
 ## Usage
@@ -59,7 +55,7 @@ package main
 import (
  "fmt"
  "log"
- "github.com/irabeny89/gosqlitex"
+ "github.com/irabeny89/gosqlitex/v2"
 )
 
 func main() {
@@ -101,7 +97,7 @@ package main
 import (
  "fmt"
  "log"
- "github.com/irabeny89/gosqlitex"
+ "github.com/irabeny89/gosqlitex/v2"
 )
 
 func main() {
@@ -123,7 +119,7 @@ package main
 import (
  "fmt"
  "log"
- "github.com/irabeny89/gosqlitex"
+ "github.com/irabeny89/gosqlitex/v2"
 )
 
 func main() {
@@ -200,7 +196,7 @@ BenchmarkParallelWrites/Writes_concurrently_on_memory-8       	   38133	     367
 Install the binary to your `$GOPATH/bin`:
 
 ```bash
-go install github.com/irabeny89/gosqlitex/cmd/mig8@latest
+go install github.com/irabeny89/gosqlitex/v2/cmd/mig8@latest
 ```
 
 ### Usage
@@ -212,7 +208,7 @@ You can use the CLI tool in several ways:
 Install the binary to your `$GOPATH/bin`:
 
 ```bash
-go install github.com/irabeny89/gosqlitex/cmd/mig8@latest
+go install github.com/irabeny89/gosqlitex/v2/cmd/mig8@latest
 ```
 
 Then use it directly:
@@ -226,7 +222,7 @@ mig8 -db app.db -run
 Use `go run` to execute the latest version directly:
 
 ```bash
-go run github.com/irabeny89/gosqlitex/cmd/mig8@latest -db app.db -dir ./migrations
+go run github.com/irabeny89/gosqlitex/v2/cmd/mig8@latest -db app.db -dir ./migrations
 ```
 
 #### 3. Using `go tool` (Go 1.24+)
@@ -234,7 +230,7 @@ go run github.com/irabeny89/gosqlitex/cmd/mig8@latest -db app.db -dir ./migratio
 If you are using Go 1.24 or later, you can run it as a tool:
 
 ```bash
-go tool github.com/irabeny89/gosqlitex/cmd/mig8@latest -db app.db -dir ./migrations
+go tool github.com/irabeny89/gosqlitex/v2/cmd/mig8@latest -db app.db -dir ./migrations
 ```
 
 The CLI supports flags and environment variables for configuration.

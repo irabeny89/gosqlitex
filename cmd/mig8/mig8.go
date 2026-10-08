@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/irabeny89/gosqlitex"
+	"github.com/irabeny89/gosqlitex/v2"
 )
 
 type ParsedArgs struct {
